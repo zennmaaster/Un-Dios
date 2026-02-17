@@ -19,7 +19,7 @@ class AgentOrchestrator @Inject constructor(
         private const val CLASSIFY_MAX_TOKENS = 128
         private const val PROCESS_MAX_TOKENS = 256
 
-        private const val ROUTER_SYSTEM_PROMPT = """You are Castor, a helpful AI assistant running on the user's Android phone.
+        private const val ROUTER_SYSTEM_PROMPT = """You are Un-Dios, a helpful AI assistant running on the user's Android phone.
 You can help with:
 - Messaging: Read and reply to WhatsApp and Teams messages
 - Media: Control Spotify, YouTube, and Audible playback

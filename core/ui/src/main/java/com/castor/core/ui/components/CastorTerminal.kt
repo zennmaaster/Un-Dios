@@ -221,7 +221,7 @@ private fun TerminalTitleBar(
             Spacer(modifier = Modifier.width(10.dp))
 
             Text(
-                text = "castor ~ terminal",
+                text = "un-dios ~ terminal",
                 style = TextStyle(
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
@@ -332,7 +332,7 @@ private fun TerminalHistory(
 private fun WelcomeMessage(monoStyle: TextStyle) {
     Column {
         Text(
-            text = "Castor Terminal v0.1.0",
+            text = "Un-Dios Terminal v0.1.0",
             style = monoStyle.copy(
                 color = TerminalColors.Accent,
                 fontWeight = FontWeight.Bold
@@ -463,7 +463,7 @@ private fun TerminalPrompt(
 
     Row {
         Text(
-            text = "castor",
+            text = "un-dios",
             style = monoStyle.copy(
                 color = TerminalColors.Prompt,
                 fontWeight = FontWeight.Bold,
@@ -649,7 +649,7 @@ private fun TerminalInputLine(
     ) {
         // Prompt
         Text(
-            text = "castor",
+            text = "un-dios",
             style = monoStyle.copy(
                 color = TerminalColors.Prompt,
                 fontWeight = FontWeight.Bold,

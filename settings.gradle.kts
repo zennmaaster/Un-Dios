@@ -19,7 +19,7 @@ dependencyResolution {
     }
 }
 
-rootProject.name = "Castor"
+rootProject.name = "Un-Dios"
 
 include(":app")
 include(":core:common")

@@ -97,7 +97,7 @@ fun SystemStatusBar(
             modifier = Modifier.weight(1f)
         ) {
             Text(
-                text = "castor",
+                text = "un-dios",
                 style = monoStyle.copy(
                     color = TerminalColors.Accent,
                     fontWeight = FontWeight.Bold,

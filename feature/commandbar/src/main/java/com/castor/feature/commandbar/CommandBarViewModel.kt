@@ -144,8 +144,8 @@ class CommandBarViewModel @Inject constructor(
             }
             "help" -> {
                 buildString {
-                    appendLine("Castor Terminal v0.1.0")
-                    appendLine("======================")
+                    appendLine("Un-Dios Terminal v0.1.0")
+                    appendLine("=======================")
                     appendLine()
                     appendLine("Built-in commands:")
                     appendLine("  help       Show this help message")
@@ -154,7 +154,7 @@ class CommandBarViewModel @Inject constructor(
                     appendLine("  privacy    Show privacy tier info")
                     appendLine("  version    Show version information")
                     appendLine()
-                    appendLine("All other input is processed by the Castor AI agent.")
+                    appendLine("All other input is processed by the Un-Dios AI agent.")
                     appendLine("Processing is local-first — your data stays on-device")
                     appendLine("unless cloud fallback is explicitly enabled.")
                 }
@@ -187,8 +187,8 @@ class CommandBarViewModel @Inject constructor(
             }
             "version" -> {
                 buildString {
-                    appendLine("Castor v0.1.0")
-                    appendLine("Privacy-first multi-agent Android system")
+                    appendLine("Un-Dios v0.1.0")
+                    appendLine("Open convergence platform for Android")
                     appendLine("Runtime: On-device GGUF inference")
                 }
             }

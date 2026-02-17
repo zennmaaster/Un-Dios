@@ -110,7 +110,7 @@ fun NotificationOnboardingSheet(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Castor reads your notifications to aggregate messages from WhatsApp, Teams, and other apps into one unified inbox.",
+                text = "Un-Dios reads your notifications to aggregate messages from WhatsApp, Teams, and other apps into one unified inbox.",
                 style = MaterialTheme.typography.bodyMedium.copy(
                     lineHeight = 22.sp
                 ),
@@ -144,8 +144,8 @@ fun NotificationOnboardingSheet(
             OnboardingStep(
                 stepNumber = 2,
                 icon = Icons.Default.Visibility,
-                title = "Find Castor",
-                description = "Locate \"Castor\" in the list of apps requesting notification access."
+                title = "Find Un-Dios",
+                description = "Locate \"Un-Dios\" in the list of apps requesting notification access."
             )
 
             OnboardingStep(

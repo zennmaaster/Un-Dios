@@ -29,7 +29,7 @@ class AgentService : LifecycleService() {
 
     private fun startForegroundWithNotification() {
         val notification = NotificationCompat.Builder(this, "agent_status")
-            .setContentTitle("Castor Active")
+            .setContentTitle("Un-Dios Active")
             .setContentText("AI agents are running")
             .setSmallIcon(android.R.drawable.ic_menu_manage)
             .setOngoing(true)
