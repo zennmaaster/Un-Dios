@@ -1,2 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Internet access for Spotify Web API calls -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application>
+
+        <!--
+            AppAuth redirect handler activity.
+            Receives the OAuth callback from Spotify after the user
+            authorizes in the browser. The scheme is injected via
+            manifestPlaceholders in build.gradle.kts.
+        -->
+        <activity
+            android:name="net.openid.appauth.RedirectUriReceiverActivity"
+            android:exported="true"
+            tools:node="merge">
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:scheme="${spotifyRedirectScheme}"
+                    android:host="spotify-callback" />
+            </intent-filter>
+        </activity>
+
+    </application>
+
+</manifest>

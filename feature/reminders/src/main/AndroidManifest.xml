@@ -1,2 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Reminder alarm trigger receiver (internal only) -->
+    <application>
+        <receiver
+            android:name=".engine.ReminderReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.castor.REMINDER_TRIGGER" />
+                <action android:name="com.castor.REMINDER_COMPLETE" />
+                <action android:name="com.castor.REMINDER_SNOOZE" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Reschedule alarms after reboot, app update, or timezone change -->
+        <receiver
+            android:name=".engine.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>

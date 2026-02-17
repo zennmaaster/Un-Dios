@@ -23,4 +23,16 @@ interface ReminderDao {
 
     @Update
     suspend fun updateReminder(reminder: ReminderEntity)
+
+    @Query("SELECT * FROM reminders WHERE id = :id")
+    suspend fun getReminderById(id: Long): ReminderEntity?
+
+    @Query("DELETE FROM reminders WHERE id = :id")
+    suspend fun deleteReminder(id: Long)
+
+    @Query("SELECT * FROM reminders WHERE isCompleted = 0 AND triggerTimeMs > :now ORDER BY triggerTimeMs ASC")
+    fun getFutureReminders(now: Long): Flow<List<ReminderEntity>>
+
+    @Query("DELETE FROM reminders WHERE isCompleted = 1 AND createdAt < :olderThan")
+    suspend fun cleanupOldCompleted(olderThan: Long)
 }

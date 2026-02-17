@@ -26,4 +26,22 @@ interface MediaQueueDao {
 
     @Query("SELECT COALESCE(MAX(queuePosition), -1) + 1 FROM media_queue")
     suspend fun getNextPosition(): Int
+
+    @Query("UPDATE media_queue SET queuePosition = :newPosition WHERE id = :itemId")
+    suspend fun updatePosition(itemId: String, newPosition: Int)
+
+    @Query("SELECT COUNT(*) FROM media_queue")
+    fun getQueueSize(): Flow<Int>
+
+    @Query("SELECT * FROM media_queue WHERE id = :itemId")
+    suspend fun getItemById(itemId: String): MediaQueueEntity?
+
+    @Query("UPDATE media_queue SET queuePosition = queuePosition - 1 WHERE queuePosition > :position")
+    suspend fun shiftPositionsDown(position: Int)
+
+    @Query("UPDATE media_queue SET queuePosition = queuePosition + 1 WHERE queuePosition >= :position")
+    suspend fun shiftPositionsUp(position: Int)
+
+    @Query("SELECT * FROM media_queue ORDER BY queuePosition ASC")
+    suspend fun getCurrentQueue(): List<MediaQueueEntity>
 }
