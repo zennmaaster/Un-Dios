@@ -157,12 +157,4 @@ class ClipboardHistoryManager @Inject constructor(
             currentHistory.filter { it.isPinned }
         }
     }
-
-    /**
-     * Returns the clipboard history as a [StateFlow].
-     * Convenience method for consumers that prefer explicit function calls.
-     *
-     * @return The observable clipboard history state flow
-     */
-    fun getHistory(): StateFlow<List<ClipboardEntry>> = history
 }

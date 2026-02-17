@@ -166,7 +166,7 @@ private fun ActiveContent(
         Spacer(modifier = Modifier.width(8.dp))
 
         state.source?.let { source ->
-            MediaSourceBadge(source = source)
+            MediaSourceBadgeFull(source = source)
         }
     }
 
@@ -270,37 +270,6 @@ private fun AlbumArt(artUri: String?, modifier: Modifier = Modifier) {
                 modifier = Modifier.size(32.dp)
             )
         }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Source badge
-// ---------------------------------------------------------------------------
-
-@Composable
-private fun MediaSourceBadge(source: MediaSource, modifier: Modifier = Modifier) {
-    val (label, color) = when (source) {
-        MediaSource.SPOTIFY -> "Spotify" to SpotifyGreen
-        MediaSource.YOUTUBE -> "YouTube" to YouTubeRed
-        MediaSource.AUDIBLE -> "Audible" to AudibleOrange
-        else -> source.name to TerminalColors.Accent
-    }
-
-    Box(
-        modifier = modifier
-            .background(
-                color = color.copy(alpha = 0.15f),
-                shape = RoundedCornerShape(4.dp)
-            )
-            .padding(horizontal = 8.dp, vertical = 3.dp)
-    ) {
-        Text(
-            text = label,
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Medium,
-            fontSize = 11.sp,
-            color = color
-        )
     }
 }
 
@@ -487,19 +456,3 @@ private fun sourceProgressColor(source: MediaSource?): Color = when (source) {
     else -> TerminalColors.Accent
 }
 
-/**
- * Format milliseconds into a human-readable `m:ss` or `h:mm:ss` string.
- * Returns `"0:00"` for non-positive values.
- */
-private fun formatDuration(ms: Long): String {
-    if (ms <= 0) return "0:00"
-    val totalSeconds = ms / 1000
-    val hours = totalSeconds / 3600
-    val minutes = (totalSeconds % 3600) / 60
-    val seconds = totalSeconds % 60
-    return if (hours > 0) {
-        "%d:%02d:%02d".format(hours, minutes, seconds)
-    } else {
-        "%d:%02d".format(minutes, seconds)
-    }
-}

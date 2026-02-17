@@ -34,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -285,6 +286,8 @@ private fun PlatformBadge(source: String) {
 // Helpers
 // -------------------------------------------------------------------------------------
 
+@Composable
+@ReadOnlyComposable
 private fun genreColor(genre: String): Color {
     val lower = genre.lowercase()
     return when {
@@ -308,6 +311,8 @@ private data class PlatformDisplayInfo(
     val label: String
 )
 
+@Composable
+@ReadOnlyComposable
 private fun platformInfo(source: String): PlatformDisplayInfo {
     val lower = source.lowercase()
     return when {

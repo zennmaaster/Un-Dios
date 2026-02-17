@@ -34,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -303,9 +304,10 @@ private fun WatchHistoryItem(entry: WatchHistoryEntity) {
                             color = TerminalColors.Info
                         )
                     )
-                    if (entry.genre != null) {
+                    val genreName = entry.genre
+                    if (genreName != null) {
                         Text(
-                            text = entry.genre,
+                            text = genreName,
                             style = TextStyle(
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 10.sp,
@@ -341,6 +343,8 @@ private fun sourceDisplayName(source: MediaSource): String = when (source) {
     else -> source.name
 }
 
+@Composable
+@ReadOnlyComposable
 private fun sourceColor(source: MediaSource): Color = when (source) {
     MediaSource.NETFLIX -> NetflixRed
     MediaSource.PRIME_VIDEO -> PrimeBlue
@@ -349,10 +353,11 @@ private fun sourceColor(source: MediaSource): Color = when (source) {
     else -> TerminalColors.Info
 }
 
-private fun sourceColor(sourceName: String): Color = try {
-    sourceColor(MediaSource.valueOf(sourceName))
-} catch (_: Exception) {
-    TerminalColors.Info
+@Composable
+@ReadOnlyComposable
+private fun sourceColor(sourceName: String): Color {
+    val source = MediaSource.entries.firstOrNull { it.name == sourceName }
+    return if (source != null) sourceColor(source) else TerminalColors.Info
 }
 
 private fun sourceIcon(sourceName: String) = when {

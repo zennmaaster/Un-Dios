@@ -710,11 +710,7 @@ class AppDrawerViewModel @Inject constructor(
             usageStatsList.associate { stats ->
                 stats.packageName to Pair(
                     stats.lastTimeUsed,
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        stats.appLaunchCount
-                    } else {
-                        0
-                    }
+                    0
                 )
             }
         } catch (_: SecurityException) {

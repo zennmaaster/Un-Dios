@@ -98,8 +98,9 @@ class ReminderReceiver : BroadcastReceiver() {
         showNotification(context, reminderId, entity.description)
 
         // If recurring, schedule the next occurrence.
-        if (entity.isRecurring && entity.recurringIntervalMs != null && entity.recurringIntervalMs > 0) {
-            val nextTrigger = entity.triggerTimeMs + entity.recurringIntervalMs
+        val intervalMs = entity.recurringIntervalMs
+        if (entity.isRecurring && intervalMs != null && intervalMs > 0) {
+            val nextTrigger = entity.triggerTimeMs + intervalMs
             reminderDao.updateReminder(entity.copy(triggerTimeMs = nextTrigger))
             reminderScheduler.scheduleReminder(reminderId, nextTrigger)
             Log.d(TAG, "Recurring reminder $reminderId rescheduled for $nextTrigger")

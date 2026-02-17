@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -454,6 +455,8 @@ private fun formatTaskbarTime(): String {
 /**
  * Returns a color based on battery percentage.
  */
+@Composable
+@ReadOnlyComposable
 private fun getBatteryColor(percent: Int): Color = when {
     percent <= 15 -> TerminalColors.Error
     percent <= 30 -> TerminalColors.Warning

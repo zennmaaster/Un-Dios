@@ -48,6 +48,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -793,6 +794,8 @@ private fun EmptyDirectoryState(searchQuery: String) {
  * @param file The file entry to get the icon for
  * @return A pair of (ImageVector, Color) for the icon and its tint
  */
+@Composable
+@ReadOnlyComposable
 private fun getFileIconAndTint(file: FileEntry): Pair<ImageVector, Color> {
     if (file.isDirectory) {
         return Icons.Default.Folder to TerminalColors.Warning

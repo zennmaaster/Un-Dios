@@ -191,13 +191,14 @@ fun BriefingCard(
                         )
 
                         // Media section (optional)
-                        if (briefing.mediaSuggestion != null) {
+                        val media = briefing.mediaSuggestion
+                        if (media != null) {
                             Spacer(modifier = Modifier.height(6.dp))
 
                             BriefingLogLine(
                                 icon = Icons.Default.MusicNote,
                                 label = "media",
-                                content = briefing.mediaSuggestion,
+                                content = media,
                                 accentColor = TerminalColors.Accent
                             )
                         }

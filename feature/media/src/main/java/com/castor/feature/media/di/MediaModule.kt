@@ -12,7 +12,7 @@ import com.castor.feature.media.youtube.YouTubeAuthManager
 import com.castor.feature.media.youtube.YouTubeMediaAdapter
 import com.castor.feature.media.audible.AudibleMediaAdapter
 import com.castor.feature.media.session.MediaSessionMonitor
-import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
+import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn

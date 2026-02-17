@@ -268,7 +268,7 @@ fun RecommendationsScreen(
                             items = state.recommendations,
                             key = { it.id }
                         ) { recommendation ->
-                            AnimatedVisibility(
+                            androidx.compose.animation.AnimatedVisibility(
                                 visible = true,
                                 enter = fadeIn(),
                                 exit = fadeOut()

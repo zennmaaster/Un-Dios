@@ -40,6 +40,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -1304,6 +1305,8 @@ private fun buildTerminalBar(fraction: Float, totalBlocks: Int): String {
 /**
  * Returns a color for the usage bar based on relative usage fraction.
  */
+@Composable
+@ReadOnlyComposable
 private fun getUsageBarColor(fraction: Float): Color = when {
     fraction > 0.7f -> TerminalColors.Error
     fraction > 0.4f -> TerminalColors.Warning

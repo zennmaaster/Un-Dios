@@ -54,9 +54,10 @@ class ReminderSyncWorker @AssistedInject constructor(
             val remindersToSchedule = mutableListOf<Reminder>()
 
             for (entity in activeReminders) {
+                val intervalMs = entity.recurringIntervalMs
                 if (entity.isRecurring
-                    && entity.recurringIntervalMs != null
-                    && entity.recurringIntervalMs > 0
+                    && intervalMs != null
+                    && intervalMs > 0
                     && entity.triggerTimeMs <= now
                 ) {
                     // Advance the trigger time past "now" by stepping forward in
@@ -64,7 +65,7 @@ class ReminderSyncWorker @AssistedInject constructor(
                     // was off for longer than one interval.
                     var nextTrigger = entity.triggerTimeMs
                     while (nextTrigger <= now) {
-                        nextTrigger += entity.recurringIntervalMs
+                        nextTrigger += intervalMs
                     }
 
                     val updated = entity.copy(triggerTimeMs = nextTrigger)

@@ -18,6 +18,9 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // AppAuth OAuth redirect scheme (used by feature:media for Spotify OAuth)
+        manifestPlaceholders["appAuthRedirectScheme"] = "com.castor.app"
     }
 
     buildTypes {

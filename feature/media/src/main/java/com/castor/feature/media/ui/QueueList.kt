@@ -32,6 +32,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -203,9 +204,10 @@ private fun QueueItemRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            if (item.artist != null) {
+            val artistName = item.artist
+            if (artistName != null) {
                 Text(
-                    text = item.artist,
+                    text = artistName,
                     style = monoStyle.copy(
                         fontSize = 11.sp,
                         color = if (isCurrent) sourceColor.copy(alpha = 0.8f)
@@ -407,6 +409,8 @@ fun MediaSourceBadgeFull(
 // =============================================================================
 
 /** Map a [MediaSource] to its accent color. */
+@Composable
+@ReadOnlyComposable
 fun MediaSource.toAccentColor(): Color = when (this) {
     MediaSource.SPOTIFY -> SpotifyGreen
     MediaSource.YOUTUBE -> YouTubeRed

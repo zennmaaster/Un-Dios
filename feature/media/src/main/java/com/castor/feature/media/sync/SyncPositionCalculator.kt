@@ -54,8 +54,9 @@ class SyncPositionCalculator @Inject constructor() {
     fun estimateKindlePosition(book: BookSyncEntity): KindleResumePoint? {
         val audibleProgress = book.audibleProgress ?: return null
 
-        val estimatedPage = if (book.kindleTotalPages != null && book.kindleTotalPages > 0) {
-            (audibleProgress * book.kindleTotalPages).toInt().coerceAtLeast(1)
+        val totalPages = book.kindleTotalPages
+        val estimatedPage = if (totalPages != null && totalPages > 0) {
+            (audibleProgress * totalPages).toInt().coerceAtLeast(1)
         } else {
             null
         }

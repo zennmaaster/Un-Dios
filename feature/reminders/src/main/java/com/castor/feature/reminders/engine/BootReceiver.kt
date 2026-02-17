@@ -4,7 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import androidx.work.ExistingOneTimeWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.castor.feature.reminders.worker.ReminderSyncWorker
@@ -45,7 +45,7 @@ class BootReceiver : BroadcastReceiver() {
 
         WorkManager.getInstance(context).enqueueUniqueWork(
             WORK_NAME,
-            ExistingOneTimeWorkPolicy.REPLACE,
+            ExistingWorkPolicy.REPLACE,
             workRequest
         )
     }

@@ -1,5 +1,7 @@
 package com.castor.feature.notifications.center
 
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
 import com.castor.core.ui.theme.TerminalColors
 
@@ -39,11 +41,14 @@ data class NotificationEntry(
  * Each category carries a list of known package-name prefixes so the
  * [NotificationCenterViewModel] can auto-classify incoming notifications.
  * Categories also define their display color and icon label for the UI.
+ *
+ * NOTE: [color] is a computed `@Composable` property (not a constructor parameter)
+ * because [TerminalColors] properties read from a [CompositionLocal] and therefore
+ * require a composable scope.
  */
 enum class NotificationCategory(
     val displayName: String,
-    val packagePrefixes: List<String>,
-    val color: Color
+    val packagePrefixes: List<String>
 ) {
     SOCIAL(
         displayName = "social",
@@ -57,8 +62,7 @@ enum class NotificationCategory(
             "com.snapchat",
             "com.discord",
             "com.reddit"
-        ),
-        color = TerminalColors.Accent
+        )
     ),
     WORK(
         displayName = "work",
@@ -73,8 +77,7 @@ enum class NotificationCategory(
             "com.notion",
             "com.todoist",
             "com.asana"
-        ),
-        color = TerminalColors.Info
+        )
     ),
     MEDIA(
         displayName = "media",
@@ -88,19 +91,26 @@ enum class NotificationCategory(
             "com.soundcloud",
             "com.amazon.kindle",
             "com.google.android.apps.youtube.music"
-        ),
-        color = TerminalColors.Success
+        )
     ),
     SYSTEM(
         displayName = "sys",
-        packagePrefixes = emptyList(),
-        color = TerminalColors.Timestamp
+        packagePrefixes = emptyList()
     ),
     OTHER(
         displayName = "other",
-        packagePrefixes = emptyList(),
-        color = TerminalColors.Subtext
+        packagePrefixes = emptyList()
     );
+
+    /** Theme-aware color resolved from [TerminalColors] via CompositionLocal. */
+    val color: Color
+        @Composable @ReadOnlyComposable get() = when (this) {
+            SOCIAL -> TerminalColors.Accent
+            WORK -> TerminalColors.Info
+            MEDIA -> TerminalColors.Success
+            SYSTEM -> TerminalColors.Timestamp
+            OTHER -> TerminalColors.Subtext
+        }
 
     companion object {
         /**
@@ -129,11 +139,23 @@ enum class NotificationCategory(
  *
  * Priority is auto-detected based on the notification category and time of day, but
  * can also be manually overridden by the user via the long-press action sheet.
+ *
+ * NOTE: [color] is a computed `@Composable` property (not a constructor parameter)
+ * because [TerminalColors] properties read from a [CompositionLocal] and therefore
+ * require a composable scope.
  */
-enum class NotificationPriority(val displayName: String, val color: Color) {
-    HIGH("high", TerminalColors.Error),
-    NORMAL("normal", TerminalColors.Command),
-    LOW("low", TerminalColors.Subtext)
+enum class NotificationPriority(val displayName: String) {
+    HIGH("high"),
+    NORMAL("normal"),
+    LOW("low");
+
+    /** Theme-aware color resolved from [TerminalColors] via CompositionLocal. */
+    val color: Color
+        @Composable @ReadOnlyComposable get() = when (this) {
+            HIGH -> TerminalColors.Error
+            NORMAL -> TerminalColors.Command
+            LOW -> TerminalColors.Subtext
+        }
 }
 
 // =====================================================================================

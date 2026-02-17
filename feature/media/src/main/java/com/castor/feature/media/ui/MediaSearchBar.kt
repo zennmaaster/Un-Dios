@@ -441,9 +441,10 @@ private fun SearchResultRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            if (item.artist != null) {
+            val artistName = item.artist
+            if (artistName != null) {
                 Text(
-                    text = item.artist,
+                    text = artistName,
                     style = monoStyle.copy(
                         fontSize = 10.sp,
                         color = TerminalColors.Timestamp

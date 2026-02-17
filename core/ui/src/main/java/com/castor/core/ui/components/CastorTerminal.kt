@@ -729,12 +729,13 @@ private fun TerminalInputLine(
 
             // Block cursor overlay when input is empty and not processing
             if (inputText.isEmpty() && !isProcessing) {
+                val cursorColor = TerminalColors.Cursor.copy(alpha = cursorAlpha * 0.5f)
                 Box(
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .drawBehind {
                             drawRect(
-                                color = TerminalColors.Cursor.copy(alpha = cursorAlpha * 0.5f),
+                                color = cursorColor,
                                 topLeft = Offset.Zero,
                                 size = Size(8.dp.toPx(), size.height)
                             )

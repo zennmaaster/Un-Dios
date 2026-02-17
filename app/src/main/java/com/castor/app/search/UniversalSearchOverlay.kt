@@ -309,7 +309,7 @@ private fun SearchTopBar(onDismiss: () -> Unit) {
 
 /**
  * Terminal-styled search input bar that resembles a `grep` command.
- * Displays: `$ grep -ri "query" /system/*` with the user's input replacing "query".
+ * Displays: `$ grep -ri "query" /system/` with the user's input replacing "query".
  * Auto-focuses when first composed.
  */
 @Composable
@@ -530,7 +530,7 @@ private fun SearchLoadingState() {
 
 /**
  * No-results state styled as a grep failure message.
- * Shows: `grep: no matches for "query" in /system/*`
+ * Shows: `grep: no matches for "query" in /system/`
  */
 @Composable
 private fun SearchEmptyState(query: String) {

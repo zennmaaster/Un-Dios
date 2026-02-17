@@ -31,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -401,6 +402,8 @@ private fun StatIndicator(
  * Returns a color based on how high a system stat (CPU/RAM) percentage is.
  * Green for low usage, orange for moderate, red for high.
  */
+@Composable
+@ReadOnlyComposable
 private fun getStatColor(percent: Float): Color = when {
     percent < 50f -> TerminalColors.Success
     percent < 80f -> TerminalColors.Warning
@@ -411,6 +414,8 @@ private fun getStatColor(percent: Float): Color = when {
  * Returns a color based on battery percentage.
  * Red for critically low, orange for low, green for healthy.
  */
+@Composable
+@ReadOnlyComposable
 private fun getBatteryColor(percent: Int): Color = when {
     percent <= 15 -> TerminalColors.Error
     percent <= 30 -> TerminalColors.Warning

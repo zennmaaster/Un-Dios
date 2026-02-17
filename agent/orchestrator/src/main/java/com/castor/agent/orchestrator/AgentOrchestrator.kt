@@ -137,9 +137,8 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
         val timestamp: Long = System.currentTimeMillis()
     )
 
-    private companion object HistoryConfig {
-        const val MAX_HISTORY_SIZE = 50
-    }
+    // History config
+    private val maxHistorySize = 50
 
     // -------------------------------------------------------------------------------------
     // Public API — main entry points
@@ -306,8 +305,10 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
     /**
      * Get the in-memory command history (most recent first).
      */
-    fun getRecentCommands(limit: Int = 10): List<CommandRecord> {
-        return commandHistory.takeLast(limit).reversed()
+    fun getRecentCommandSummaries(limit: Int = 10): List<String> {
+        return commandHistory.takeLast(limit).reversed().map {
+            "[${it.agentType}] ${it.input} -> ${it.response.take(100)}"
+        }
     }
 
     /**
@@ -735,7 +736,7 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
             )
         )
         // Trim to max size
-        while (commandHistory.size > MAX_HISTORY_SIZE) {
+        while (commandHistory.size > maxHistorySize) {
             commandHistory.removeAt(0)
         }
     }

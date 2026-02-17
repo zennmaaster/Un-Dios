@@ -1,6 +1,7 @@
 package com.castor.feature.commandbar
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -69,7 +70,7 @@ import kotlinx.coroutines.launch
 
 private val MonoStyle = TextStyle(
     fontFamily = FontFamily.Monospace,
-    color = TerminalColors.Command
+    color = Color(0xFFCDD6F4) // CatppuccinMocha command color
 )
 
 // =============================================================================
