@@ -1,18 +1,27 @@
 package com.castor.app.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.MaterialTheme
@@ -20,20 +29,42 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.castor.core.ui.components.AgentCard
+import com.castor.core.ui.components.QuickLaunchBar
+import com.castor.core.ui.components.SystemStats
+import com.castor.core.ui.components.SystemStatusBar
 import com.castor.core.ui.theme.CastorPrimary
 import com.castor.core.ui.theme.SpotifyGreen
 import com.castor.core.ui.theme.TeamsBlue
+import com.castor.core.ui.theme.TerminalColors
 import com.castor.core.ui.theme.WhatsAppGreen
 import com.castor.feature.commandbar.CommandBar
 import com.castor.feature.commandbar.CommandBarViewModel
 
+/**
+ * The main home screen of Castor, styled as an Ubuntu/Linux desktop environment.
+ *
+ * Layout structure (top to bottom):
+ * 1. SystemStatusBar — persistent dark panel with system stats (CPU, RAM, battery, time)
+ * 2. Main workspace area — scrollable content containing:
+ *    a. CastorTerminal (via CommandBar) — expanded by default, ~40% of screen
+ *    b. Agent cards — 2-column grid (Messages, Media, Reminders, AI)
+ *       each showing live status info
+ * 3. QuickLaunchBar — Ubuntu-style dock at the bottom
+ *
+ * The overall aesthetic is dark-theme-first, information-dense, monospace stats,
+ * designed for power users who want a DIY Linux desktop feel on Android.
+ */
 @Composable
 fun HomeScreen(
     onNavigateToMessages: () -> Unit,
@@ -43,68 +74,104 @@ fun HomeScreen(
 ) {
     val commandBarState by viewModel.uiState.collectAsState()
 
+    // Placeholder system stats — in production, a dedicated ViewModel would provide real values
+    val systemStats = remember {
+        SystemStats(
+            cpuUsage = 23f,
+            ramUsage = 47f,
+            ramUsedMb = 2867,
+            ramTotalMb = 6144,
+            batteryPercent = 72,
+            isCharging = false,
+            wifiConnected = true,
+            bluetoothConnected = true,
+            unreadNotifications = 3,
+            currentTime = "14:32"
+        )
+    }
+
+    // Placeholder counts — in production, from agent ViewModels
+    val unreadMessages = 5
+    val nowPlaying = "Nothing playing"
+    val nextReminder = "No upcoming tasks"
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding()
+            .background(TerminalColors.Background)
     ) {
-        // Header
-        Text(
-            text = "Castor",
-            style = MaterialTheme.typography.headlineLarge,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
-        )
-
-        // Command Bar
-        CommandBar(
-            state = commandBarState,
-            onSubmit = viewModel::onSubmit,
+        // ============================================================
+        // 1. System Status Bar (Ubuntu panel — always dark, always visible)
+        // ============================================================
+        SystemStatusBar(
+            stats = systemStats,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
+                .statusBarsPadding()
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Agent Cards
-        LazyColumn(
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.fillMaxSize()
+        // ============================================================
+        // 2. Main Workspace Area (scrollable)
+        // ============================================================
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
         ) {
+            // ---- Terminal: spans full width ----
+            item(span = { GridItemSpan(2) }) {
+                CommandBar(
+                    state = commandBarState,
+                    onSubmit = viewModel::onSubmit,
+                    onToggleExpanded = viewModel::toggleExpanded,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            // ---- Section header ----
+            item(span = { GridItemSpan(2) }) {
+                SectionHeader(title = "agents")
+            }
+
+            // ---- Messages card ----
             item {
                 AgentCard(
                     title = "Messages",
-                    subtitle = "WhatsApp & Teams unified inbox",
+                    subtitle = "WhatsApp & Teams",
                     icon = Icons.Default.ChatBubble,
                     accentColor = WhatsAppGreen,
                     onClick = onNavigateToMessages
                 ) {
-                    Text(
-                        text = "Tap to view messages",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    AgentStatusText(
+                        text = if (unreadMessages > 0) "$unreadMessages unread" else "All caught up",
+                        isActive = unreadMessages > 0,
+                        activeColor = WhatsAppGreen
                     )
                 }
             }
 
+            // ---- Media card ----
             item {
                 AgentCard(
                     title = "Media",
-                    subtitle = "Spotify, YouTube & Audible",
+                    subtitle = "Spotify / YouTube",
                     icon = Icons.Default.Album,
                     accentColor = SpotifyGreen,
                     onClick = onNavigateToMedia
                 ) {
-                    Text(
-                        text = "Nothing playing",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    AgentStatusText(
+                        text = nowPlaying,
+                        isActive = nowPlaying != "Nothing playing",
+                        activeColor = SpotifyGreen
                     )
                 }
             }
 
+            // ---- Reminders card ----
             item {
                 AgentCard(
                     title = "Reminders",
@@ -113,29 +180,121 @@ fun HomeScreen(
                     accentColor = TeamsBlue,
                     onClick = onNavigateToReminders
                 ) {
-                    Text(
-                        text = "No upcoming reminders",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    AgentStatusText(
+                        text = nextReminder,
+                        isActive = nextReminder != "No upcoming tasks",
+                        activeColor = TeamsBlue
                     )
                 }
             }
 
+            // ---- AI Assistant card ----
             item {
                 AgentCard(
-                    title = "AI Assistant",
-                    subtitle = "On-device intelligence",
+                    title = "AI Engine",
+                    subtitle = "On-device LLM",
                     icon = Icons.Default.SmartToy,
                     accentColor = CastorPrimary,
-                    onClick = { /* Open AI chat */ }
+                    onClick = { viewModel.toggleExpanded() }
                 ) {
-                    Text(
-                        text = "Model: Loading...",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    AgentStatusText(
+                        text = "LOCAL inference",
+                        isActive = true,
+                        activeColor = TerminalColors.Success
                     )
                 }
             }
+
+            // Bottom spacing so content isn't hidden behind the dock
+            item(span = { GridItemSpan(2) }) {
+                Spacer(modifier = Modifier.height(8.dp))
+            }
         }
+
+        // ============================================================
+        // 3. Quick Launch Bar (Ubuntu dock)
+        // ============================================================
+        QuickLaunchBar(
+            onMessages = onNavigateToMessages,
+            onMedia = onNavigateToMedia,
+            onReminders = onNavigateToReminders,
+            onAppDrawer = { /* TODO: Open app drawer */ },
+            onTerminal = { viewModel.toggleExpanded() },
+            unreadMessages = unreadMessages
+        )
+    }
+}
+
+// ============================================================================
+// Helper composables
+// ============================================================================
+
+/**
+ * Monospace section header for separating content areas.
+ * Styled like a terminal comment: `# agents`
+ */
+@Composable
+private fun SectionHeader(title: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(vertical = 4.dp, horizontal = 4.dp)
+    ) {
+        Text(
+            text = "# ",
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = TerminalColors.Accent
+            )
+        )
+        Text(
+            text = title,
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = TerminalColors.Timestamp
+            )
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .clip(RoundedCornerShape(1.dp))
+                .background(TerminalColors.Surface)
+        )
+    }
+}
+
+/**
+ * Status line shown inside each AgentCard, with a small colored dot
+ * indicator when the agent has active content.
+ */
+@Composable
+private fun AgentStatusText(
+    text: String,
+    isActive: Boolean,
+    activeColor: androidx.compose.ui.graphics.Color
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (isActive) {
+            androidx.compose.material3.Icon(
+                imageVector = Icons.Default.Circle,
+                contentDescription = null,
+                tint = activeColor,
+                modifier = Modifier.size(6.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+        }
+        Text(
+            text = text,
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                color = if (isActive) activeColor else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        )
     }
 }
