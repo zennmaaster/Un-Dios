@@ -17,8 +17,10 @@ import com.castor.app.onboarding.OnboardingPreferences
 import com.castor.app.onboarding.OnboardingScreen
 import com.castor.app.onboarding.onboardingDataStore
 import com.castor.app.ui.HomeScreen
+import com.castor.app.usage.UsageStatsScreen
 import com.castor.feature.media.sync.ui.BookSyncScreen
 import com.castor.feature.media.ui.MediaScreen
+import com.castor.feature.messaging.contacts.ContactsScreen
 import com.castor.feature.messaging.ui.ConversationScreen
 import com.castor.feature.messaging.ui.MessagingScreen
 import com.castor.feature.recommendations.ui.RecommendationsScreen
@@ -48,8 +50,10 @@ import java.nio.charset.StandardCharsets
  * - "home"         — main dashboard (with gesture-driven app drawer overlay)
  * - "messages"     — unified messaging inbox (split-pane on tablets)
  * - "conversation" — individual conversation thread (phone-only; tablets use embedded pane)
+ * - "contacts"     — contacts hub (terminal-styled contact browser with actions)
  * - "media"        — media aggregation
  * - "reminders"    — smart reminders
+ * - "usage_stats"  — screen time / app usage stats dashboard
  * - "settings"     — launcher settings (/etc/un-dios/config)
  *
  * Note: The app drawer is implemented as a full-screen overlay within HomeScreen
@@ -99,8 +103,10 @@ fun CastorNavHost() {
             HomeScreen(
                 onNavigateToMessages = { navController.navigate("messages") },
                 onNavigateToMedia = { navController.navigate("media") },
+                onNavigateToContacts = { navController.navigate("contacts") },
                 onNavigateToReminders = { navController.navigate("reminders") },
                 onNavigateToRecommendations = { navController.navigate("recommendations") },
+                onNavigateToUsageStats = { navController.navigate("usage_stats") },
                 onNavigateToSettings = { navController.navigate("settings") }
             )
         }
@@ -149,6 +155,12 @@ fun CastorNavHost() {
             )
         }
 
+        composable("contacts") {
+            ContactsScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
         composable("media") {
             MediaScreen(
                 onBack = { navController.popBackStack() },
@@ -176,9 +188,16 @@ fun CastorNavHost() {
             )
         }
 
+        composable("usage_stats") {
+            UsageStatsScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
         composable("settings") {
             LauncherSettingsScreen(
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onNavigateToUsageStats = { navController.navigate("usage_stats") }
             )
         }
     }

@@ -90,4 +90,17 @@ interface MessageDao {
         """
     )
     fun getRecentConversations(): Flow<List<MessageEntity>>
+
+    // --- Universal search ---
+
+    @Query(
+        """
+        SELECT * FROM messages
+        WHERE content LIKE '%' || :query || '%'
+           OR sender LIKE '%' || :query || '%'
+        ORDER BY timestamp DESC
+        LIMIT :limit
+        """
+    )
+    fun searchMessages(query: String, limit: Int = 20): Flow<List<MessageEntity>>
 }

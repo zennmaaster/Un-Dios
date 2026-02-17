@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,6 +47,7 @@ import com.castor.core.ui.theme.TerminalColors
  * @param onReminders Navigate to the Reminders agent
  * @param onAppDrawer Open the app drawer / grid
  * @param onTerminal Focus the terminal / bring it to front
+ * @param onSearch Open the universal search overlay
  * @param unreadMessages Badge count for unread messages
  * @param modifier Modifier for the root composable
  */
@@ -56,6 +58,7 @@ fun QuickLaunchBar(
     onReminders: () -> Unit,
     onAppDrawer: () -> Unit,
     onTerminal: () -> Unit,
+    onSearch: () -> Unit = {},
     unreadMessages: Int = 0,
     modifier: Modifier = Modifier
 ) {
@@ -90,6 +93,13 @@ fun QuickLaunchBar(
             onClick = onTerminal,
             tint = TerminalColors.Accent,
             isHighlighted = true
+        )
+
+        DockItem(
+            icon = Icons.Default.Search,
+            label = "grep",
+            onClick = onSearch,
+            tint = TerminalColors.Cursor
         )
 
         DockItem(

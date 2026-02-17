@@ -94,6 +94,17 @@ class MessageRepository @Inject constructor(
         messageDao.getMessageById(id)?.toDomain()
 
     // -------------------------------------------------------------------------------------
+    // Search
+    // -------------------------------------------------------------------------------------
+
+    /**
+     * Searches messages by content or sender using a LIKE query.
+     * Returns a [Flow] of matching messages, limited to [limit] results.
+     */
+    fun searchMessages(query: String, limit: Int = 20): Flow<List<CastorMessage>> =
+        messageDao.searchMessages(query, limit).map { entities -> entities.map { it.toDomain() } }
+
+    // -------------------------------------------------------------------------------------
     // Write
     // -------------------------------------------------------------------------------------
 

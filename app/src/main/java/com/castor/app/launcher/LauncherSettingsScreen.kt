@@ -45,6 +45,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,6 +61,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.castor.app.lockscreen.LockScreenViewModel
 import com.castor.core.ui.theme.TerminalColors
 
 /**
@@ -77,9 +80,17 @@ import com.castor.core.ui.theme.TerminalColors
  */
 @Composable
 fun LauncherSettingsScreen(
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onNavigateToUsageStats: () -> Unit = {},
+    lockScreenViewModel: LockScreenViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
+
+    // Lock screen preferences
+    val isLockEnabled by lockScreenViewModel.isLockEnabled.collectAsState()
+    val showBootAnimation by lockScreenViewModel.showBootAnimation.collectAsState()
+    val showNotificationsOnLock by lockScreenViewModel.showNotificationsOnLock.collectAsState()
+    val lockTimeoutMs by lockScreenViewModel.lockTimeoutMs.collectAsState()
 
     Column(
         modifier = Modifier
@@ -203,6 +214,50 @@ fun LauncherSettingsScreen(
             item { SettingsDivider() }
 
             // ================================================================
+            // [lock-screen] section
+            // ================================================================
+            item { SettingsSectionHeader(title = "lock-screen") }
+
+            item {
+                SettingsToggleRow(
+                    key = "lockscreen.enabled",
+                    label = "Enable lock screen",
+                    description = "Show terminal lock screen on wake",
+                    initialValue = isLockEnabled,
+                    onValueChange = { lockScreenViewModel.setLockEnabled(it) }
+                )
+            }
+
+            item {
+                SettingsToggleRow(
+                    key = "lockscreen.boot_animation",
+                    label = "Boot animation",
+                    description = "Play kernel boot sequence on lock screen",
+                    initialValue = showBootAnimation,
+                    onValueChange = { lockScreenViewModel.setShowBootAnimation(it) }
+                )
+            }
+
+            item {
+                SettingsToggleRow(
+                    key = "lockscreen.show_notifications",
+                    label = "Notifications on lock screen",
+                    description = "Show last 3 notification previews",
+                    initialValue = showNotificationsOnLock,
+                    onValueChange = { lockScreenViewModel.setShowNotificationsOnLock(it) }
+                )
+            }
+
+            item {
+                LockTimeoutSelector(
+                    currentTimeoutMs = lockTimeoutMs,
+                    onTimeoutSelected = { lockScreenViewModel.setLockTimeout(it) }
+                )
+            }
+
+            item { SettingsDivider() }
+
+            // ================================================================
             // [privacy] section
             // ================================================================
             item { SettingsSectionHeader(title = "privacy") }
@@ -240,6 +295,42 @@ fun LauncherSettingsScreen(
                     description = "Send anonymous usage data",
                     initialValue = false,
                     onValueChange = { /* TODO: Persist */ }
+                )
+            }
+
+            item { SettingsDivider() }
+
+            // ================================================================
+            // [usage-stats] section
+            // ================================================================
+            item { SettingsSectionHeader(title = "usage-stats") }
+
+            item {
+                SettingsActionRow(
+                    key = "usage.screen_time",
+                    label = "View screen time",
+                    description = "Open the screen time dashboard (htop --user-apps)",
+                    onClick = onNavigateToUsageStats
+                )
+            }
+
+            item {
+                SettingsToggleRow(
+                    key = "usage.daily_summary",
+                    label = "Daily summary notification",
+                    description = "Show a daily screen time summary notification",
+                    initialValue = false,
+                    onValueChange = { /* TODO: Persist daily summary preference */ }
+                )
+            }
+
+            item {
+                SettingsToggleRow(
+                    key = "usage.track_categories",
+                    label = "Track app categories",
+                    description = "Classify apps into categories for breakdown view",
+                    initialValue = true,
+                    onValueChange = { /* TODO: Persist category tracking preference */ }
                 )
             }
 
@@ -810,6 +901,100 @@ private fun SettingsSystemStatusRow(
             tint = if (isEnabled) TerminalColors.Success else TerminalColors.Warning,
             modifier = Modifier.size(20.dp)
         )
+    }
+}
+
+// =============================================================================
+// Lock timeout selector
+// =============================================================================
+
+/**
+ * A selector row for choosing the auto-lock timeout duration.
+ * Displays timeout options as tappable terminal-styled chips:
+ * 30s, 1m, 2m, 5m, never.
+ */
+@Composable
+private fun LockTimeoutSelector(
+    currentTimeoutMs: Long,
+    onTimeoutSelected: (Long) -> Unit
+) {
+    val timeoutOptions = listOf(
+        "30s" to 30_000L,
+        "1m" to 60_000L,
+        "2m" to 120_000L,
+        "5m" to 300_000L,
+        "never" to -1L
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .background(TerminalColors.Surface.copy(alpha = 0.5f))
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Text(
+            text = "lockscreen.timeout = ${formatTimeout(currentTimeoutMs)}",
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                color = TerminalColors.Command
+            )
+        )
+
+        Text(
+            text = "# Auto-lock after inactivity",
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+                color = TerminalColors.Subtext
+            ),
+            modifier = Modifier.padding(top = 2.dp)
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            timeoutOptions.forEach { (label, timeoutMs) ->
+                val isSelected = currentTimeoutMs == timeoutMs ||
+                    (timeoutMs == -1L && (currentTimeoutMs < 0 || currentTimeoutMs == Long.MAX_VALUE))
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(
+                            if (isSelected) TerminalColors.Accent.copy(alpha = 0.2f)
+                            else TerminalColors.Background
+                        )
+                        .clickable { onTimeoutSelected(timeoutMs) }
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = label,
+                        style = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isSelected) TerminalColors.Accent else TerminalColors.Timestamp
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Format a timeout value in milliseconds to a human-readable label.
+ */
+private fun formatTimeout(timeoutMs: Long): String {
+    return when {
+        timeoutMs < 0 || timeoutMs == Long.MAX_VALUE -> "never"
+        timeoutMs < 60_000L -> "${timeoutMs / 1000}s"
+        else -> "${timeoutMs / 60_000}m"
     }
 }
 

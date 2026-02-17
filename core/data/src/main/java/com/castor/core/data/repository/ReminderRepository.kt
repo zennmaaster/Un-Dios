@@ -63,6 +63,13 @@ class ReminderRepository @Inject constructor(
     suspend fun getReminderById(id: Long): Reminder? =
         reminderDao.getReminderById(id)?.toDomain()
 
+    /**
+     * Searches reminders by description using a LIKE query.
+     * Returns a [Flow] of matching reminders, limited to [limit] results.
+     */
+    fun searchReminders(query: String, limit: Int = 20): Flow<List<Reminder>> =
+        reminderDao.searchReminders(query, limit).map { entities -> entities.map { it.toDomain() } }
+
     // -------------------------------------------------------------------------------------
     // Write
     // -------------------------------------------------------------------------------------

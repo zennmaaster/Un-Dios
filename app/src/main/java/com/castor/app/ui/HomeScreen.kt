@@ -1,6 +1,7 @@
 package com.castor.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Circle
+import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Star
@@ -36,14 +38,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.castor.app.launcher.AppDrawer
 import com.castor.app.launcher.GestureHandler
+import com.castor.app.lockscreen.LockScreenOverlay
+import com.castor.app.lockscreen.LockScreenViewModel
+import com.castor.core.security.BiometricAuthManager
 import com.castor.core.ui.components.AgentCard
 import com.castor.core.ui.components.QuickLaunchBar
 import com.castor.core.ui.components.SystemStatusBar
@@ -54,6 +61,7 @@ import com.castor.core.ui.theme.TeamsBlue
 import com.castor.core.ui.theme.NetflixRed
 import com.castor.core.ui.theme.TerminalColors
 import com.castor.core.ui.theme.WhatsAppGreen
+import com.castor.app.search.UniversalSearchOverlay
 import com.castor.feature.commandbar.CommandBar
 import com.castor.feature.commandbar.CommandBarViewModel
 
@@ -85,26 +93,49 @@ import com.castor.feature.commandbar.CommandBarViewModel
 fun HomeScreen(
     onNavigateToMessages: () -> Unit,
     onNavigateToMedia: () -> Unit,
+    onNavigateToContacts: () -> Unit,
     onNavigateToReminders: () -> Unit,
     onNavigateToRecommendations: () -> Unit,
+    onNavigateToUsageStats: () -> Unit,
     onNavigateToSettings: () -> Unit,
     viewModel: CommandBarViewModel = hiltViewModel(),
-    systemStatsViewModel: SystemStatsViewModel = hiltViewModel()
+    systemStatsViewModel: SystemStatsViewModel = hiltViewModel(),
+    lockScreenViewModel: LockScreenViewModel = hiltViewModel()
 ) {
     val commandBarState by viewModel.uiState.collectAsState()
 
     // App drawer visibility state — survives recomposition but not process death
     var isAppDrawerVisible by rememberSaveable { mutableStateOf(false) }
 
+    // Universal search overlay visibility state
+    var isSearchVisible by rememberSaveable { mutableStateOf(false) }
+
     // Real-time system stats from SystemStatsProvider (CPU, RAM, battery, WiFi, BT, time, etc.)
     val systemStats by systemStatsViewModel.stats.collectAsState()
+
+    // Lock screen state
+    val isLocked by lockScreenViewModel.isLocked.collectAsState()
+    val showBootSequence by lockScreenViewModel.showBootSequence.collectAsState()
+    val bootLines by lockScreenViewModel.bootLines.collectAsState()
+    val showSuccessMessage by lockScreenViewModel.showSuccessMessage.collectAsState()
+    val clockTime by lockScreenViewModel.clockTime.collectAsState()
+    val clockDate by lockScreenViewModel.clockDate.collectAsState()
+    val recentNotifications by lockScreenViewModel.recentNotifications.collectAsState()
+    val showNotificationsOnLock by lockScreenViewModel.showNotificationsOnLock.collectAsState()
+
+    // Biometric authentication wiring
+    val context = LocalContext.current
+    val biometricAuthManager = androidx.compose.runtime.remember { BiometricAuthManager() }
+    val activity = context as? FragmentActivity
+    val canUseBiometric = activity?.let { biometricAuthManager.canAuthenticate(it) } ?: false
 
     // Placeholder counts — in production, from agent ViewModels
     val unreadMessages = 5
     val nowPlaying = "Nothing playing"
     val nextReminder = "No upcoming tasks"
 
-    // The entire home screen is layered: home content underneath, app drawer overlay on top
+    // The entire home screen is layered: home content underneath, app drawer overlay on top,
+    // lock screen overlay on the very top
     Box(modifier = Modifier.fillMaxSize()) {
         // ====================================================================
         // Layer 1: Home screen content with gesture detection
@@ -128,6 +159,7 @@ fun HomeScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .statusBarsPadding()
+                        .clickable(onClick = onNavigateToUsageStats)
                 )
 
                 // ============================================================
@@ -208,6 +240,23 @@ fun HomeScreen(
                         }
                     }
 
+                    // ---- Contacts card ----
+                    item {
+                        AgentCard(
+                            title = "Contacts",
+                            subtitle = "People & groups",
+                            icon = Icons.Default.Contacts,
+                            accentColor = TerminalColors.Info,
+                            onClick = onNavigateToContacts
+                        ) {
+                            AgentStatusText(
+                                text = "/etc/contacts",
+                                isActive = true,
+                                activeColor = TerminalColors.Info
+                            )
+                        }
+                    }
+
                     // ---- AI Assistant card ----
                     item {
                         AgentCard(
@@ -257,6 +306,7 @@ fun HomeScreen(
                     onReminders = onNavigateToReminders,
                     onAppDrawer = { isAppDrawerVisible = true },
                     onTerminal = { viewModel.toggleExpanded() },
+                    onSearch = { isSearchVisible = true },
                     unreadMessages = unreadMessages
                 )
             }
@@ -268,6 +318,74 @@ fun HomeScreen(
         AppDrawer(
             isVisible = isAppDrawerVisible,
             onDismiss = { isAppDrawerVisible = false }
+        )
+
+        // ====================================================================
+        // Layer 3: Universal search overlay (GNOME Spotlight)
+        // ====================================================================
+        UniversalSearchOverlay(
+            isVisible = isSearchVisible,
+            onDismiss = { isSearchVisible = false },
+            onNavigate = { route ->
+                when (route) {
+                    "messages" -> onNavigateToMessages()
+                    "media" -> onNavigateToMedia()
+                    "reminders" -> onNavigateToReminders()
+                    "recommendations" -> onNavigateToRecommendations()
+                    "settings" -> onNavigateToSettings()
+                }
+            },
+            onOpenConversation = { sender, groupName ->
+                // Navigate to messages — the conversation screen will be opened
+                // from the messaging screen's conversation click handler
+                onNavigateToMessages()
+            },
+            onOpenAppDrawer = {
+                isSearchVisible = false
+                isAppDrawerVisible = true
+            }
+        )
+
+        // ====================================================================
+        // Layer 4: Lock screen overlay (topmost — above everything)
+        // ====================================================================
+        LockScreenOverlay(
+            isLocked = isLocked,
+            showBootSequence = showBootSequence,
+            bootLines = bootLines,
+            showSuccessMessage = showSuccessMessage,
+            clockTime = clockTime,
+            clockDate = clockDate,
+            batteryPercent = systemStats.batteryPercent,
+            isCharging = systemStats.isCharging,
+            notifications = recentNotifications,
+            showNotifications = showNotificationsOnLock,
+            canUseBiometric = canUseBiometric,
+            onBiometricRequested = {
+                activity?.let { fragmentActivity ->
+                    biometricAuthManager.authenticate(
+                        activity = fragmentActivity,
+                        title = "Un-Dios Lock Screen",
+                        subtitle = "$ authenticate --biometric",
+                        onSuccess = { lockScreenViewModel.unlockScreen() },
+                        onError = { _, _ -> /* Handled by system biometric UI */ }
+                    )
+                }
+            },
+            onSwipeUnlock = {
+                // If biometric is available, trigger it on swipe; otherwise unlock directly
+                if (canUseBiometric && activity != null) {
+                    biometricAuthManager.authenticate(
+                        activity = activity,
+                        title = "Un-Dios Lock Screen",
+                        subtitle = "$ authenticate --biometric",
+                        onSuccess = { lockScreenViewModel.unlockScreen() },
+                        onError = { _, _ -> /* Handled by system biometric UI */ }
+                    )
+                } else {
+                    lockScreenViewModel.unlockScreen()
+                }
+            }
         )
     }
 }

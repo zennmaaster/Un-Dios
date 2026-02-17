@@ -35,4 +35,16 @@ interface ReminderDao {
 
     @Query("DELETE FROM reminders WHERE isCompleted = 1 AND createdAt < :olderThan")
     suspend fun cleanupOldCompleted(olderThan: Long)
+
+    // --- Universal search ---
+
+    @Query(
+        """
+        SELECT * FROM reminders
+        WHERE description LIKE '%' || :query || '%'
+        ORDER BY triggerTimeMs DESC
+        LIMIT :limit
+        """
+    )
+    fun searchReminders(query: String, limit: Int = 20): Flow<List<ReminderEntity>>
 }
