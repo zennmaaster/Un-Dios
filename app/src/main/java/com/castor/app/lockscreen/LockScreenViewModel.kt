@@ -4,15 +4,20 @@ import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.castor.app.weather.WeatherRepository
+import com.castor.core.data.db.dao.NotificationDao
+import com.castor.core.data.db.entity.NotificationEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -20,18 +25,40 @@ import java.util.Date
 import java.util.Locale
 import javax.inject.Inject
 
+// =============================================================================
+// Lock screen notification UI model
+// =============================================================================
+
 /**
- * A placeholder notification entry shown on the lock screen.
+ * UI model representing a single notification preview on the lock screen.
  *
- * @param source The originating app or channel (e.g. "WhatsApp", "Gmail").
- * @param content A one-line summary of the notification content.
- * @param timestamp Human-readable timestamp (e.g. "14:32").
+ * Mapped from [NotificationEntity] in the Room database. Unlike the old
+ * placeholder version, this carries the full metadata needed for the
+ * [LockScreenNotificationCard] composable.
+ *
+ * @param id Unique notification ID (from Room).
+ * @param appName Display name of the originating app (e.g. "WhatsApp", "Gmail").
+ * @param title Notification title (sender name or subject line).
+ * @param content One-line body preview of the notification.
+ * @param timestamp Unix epoch millis when the notification was posted.
+ * @param formattedTime Human-readable time string (e.g. "14:32").
+ * @param priority Priority level string ("high", "normal", "low").
+ * @param category Category string ("social", "work", "media", "sys", "other").
  */
 data class LockScreenNotification(
-    val source: String,
+    val id: String,
+    val appName: String,
+    val title: String,
     val content: String,
-    val timestamp: String
+    val timestamp: Long,
+    val formattedTime: String,
+    val priority: String,
+    val category: String
 )
+
+// =============================================================================
+// ViewModel
+// =============================================================================
 
 /**
  * ViewModel managing the terminal-styled lock screen state.
@@ -41,7 +68,9 @@ data class LockScreenNotification(
  * - Drives the boot-sequence animation via [showBootSequence] and [bootLines]
  * - Updates the clock every 60 seconds
  * - Reads user preferences from DataStore (lock enabled, timeout, boot animation, etc.)
- * - Provides a placeholder list of recent notifications for the lock screen preview
+ * - Queries real notifications from Room via [NotificationDao]
+ * - Exposes a weather summary from [WeatherRepository]
+ * - Provides formatted date, notification count, and weather for the lock screen UI
  * - Auto-locks the device after a configurable idle timeout
  *
  * Compose usage:
@@ -49,11 +78,14 @@ data class LockScreenNotification(
  * val viewModel: LockScreenViewModel = hiltViewModel()
  * val isLocked by viewModel.isLocked.collectAsState()
  * val clockTime by viewModel.clockTime.collectAsState()
+ * val notifications by viewModel.recentNotifications.collectAsState()
  * ```
  */
 @HiltViewModel
 class LockScreenViewModel @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val notificationDao: NotificationDao,
+    private val weatherRepository: WeatherRepository
 ) : ViewModel() {
 
     // =========================================================================
@@ -98,6 +130,14 @@ class LockScreenViewModel @Inject constructor(
     val clockDate: StateFlow<String> = _clockDate.asStateFlow()
 
     // =========================================================================
+    // Terminal-formatted date (e.g. "Mon Feb 17 2026")
+    // =========================================================================
+
+    /** Current date in terminal `date` command format: "Mon Feb 17 2026". */
+    private val _currentDate = MutableStateFlow(formatTerminalDate())
+    val currentDate: StateFlow<String> = _currentDate.asStateFlow()
+
+    // =========================================================================
     // Preferences
     // =========================================================================
 
@@ -118,31 +158,45 @@ class LockScreenViewModel @Inject constructor(
     val showBootAnimation: StateFlow<Boolean> = _showBootAnimation.asStateFlow()
 
     // =========================================================================
-    // Notifications (placeholder)
+    // Notifications (real data from Room)
     // =========================================================================
 
-    /** Recent notifications to preview on the lock screen. */
-    private val _recentNotifications = MutableStateFlow(
-        listOf(
-            LockScreenNotification(
-                source = "WhatsApp",
-                content = "Mom: \"Are you coming for dinner?\"",
-                timestamp = "14:32"
-            ),
-            LockScreenNotification(
-                source = "Gmail",
-                content = "Your order has been shipped",
-                timestamp = "13:15"
-            ),
-            LockScreenNotification(
-                source = "Calendar",
-                content = "Team standup in 30 minutes",
-                timestamp = "12:00"
-            )
-        )
-    )
+    /** Time formatter for notification timestamps. */
+    private val timeFormatter = SimpleDateFormat("HH:mm", Locale.getDefault())
+
+    /**
+     * Recent unread notifications mapped to lock-screen UI models.
+     * Observes Room's reactive Flow and limits to 5 most recent entries.
+     */
     val recentNotifications: StateFlow<List<LockScreenNotification>> =
-        _recentNotifications.asStateFlow()
+        notificationDao.getRecentUnread(limit = 5)
+            .map { entities -> entities.map { it.toLockScreenNotification() } }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = emptyList()
+            )
+
+    /** Total count of unread, non-dismissed notifications. */
+    val notificationCount: StateFlow<Int> =
+        notificationDao.getUnreadCount()
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = 0
+            )
+
+    // =========================================================================
+    // Weather summary
+    // =========================================================================
+
+    /**
+     * One-line weather summary for the lock screen.
+     * Format: "52F, Partly cloudy" or null if weather data is unavailable.
+     * Refreshed when the lock screen becomes visible and periodically.
+     */
+    private val _weatherSummary = MutableStateFlow<String?>(null)
+    val weatherSummary: StateFlow<String?> = _weatherSummary.asStateFlow()
 
     // =========================================================================
     // Internal jobs
@@ -172,6 +226,7 @@ class LockScreenViewModel @Inject constructor(
     init {
         loadPreferences()
         startClockUpdater()
+        loadWeatherSummary()
     }
 
     // =========================================================================
@@ -290,6 +345,7 @@ class LockScreenViewModel @Inject constructor(
             while (isActive) {
                 _clockTime.value = formatTime()
                 _clockDate.value = formatDate()
+                _currentDate.value = formatTerminalDate()
                 delay(60_000L)
             }
         }
@@ -311,6 +367,54 @@ class LockScreenViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Format the current date in a terminal `date` command style.
+     * Example: "Mon Feb 17 2026"
+     */
+    private fun formatTerminalDate(): String {
+        return try {
+            SimpleDateFormat("EEE MMM d yyyy", Locale.US).format(Date())
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    // =========================================================================
+    // Weather
+    // =========================================================================
+
+    /**
+     * Load weather summary from the repository's cached data.
+     * Attempts to read cached weather first, falling back to a fresh fetch.
+     */
+    private fun loadWeatherSummary() {
+        viewModelScope.launch {
+            try {
+                val lat = weatherRepository.getSavedLatitude()
+                val lon = weatherRepository.getSavedLongitude()
+                val cityName = weatherRepository.getSavedCityName()
+                val country = weatherRepository.getSavedCountry()
+
+                // Use cache if available (forceRefresh = false)
+                val response = weatherRepository.fetchWeather(lat, lon, forceRefresh = false)
+                val weatherData = weatherRepository.toWeatherData(response, cityName, country)
+
+                if (weatherData != null) {
+                    val tempF = (weatherData.temperature * 9.0 / 5.0 + 32).toInt()
+                    _weatherSummary.value = "${tempF}F, ${weatherData.description}"
+                }
+            } catch (_: Exception) {
+                // Weather is a nice-to-have on the lock screen; fail silently
+                _weatherSummary.value = null
+            }
+        }
+    }
+
+    /** Refresh the weather summary. Called when the lock screen becomes visible. */
+    fun refreshWeatherSummary() {
+        loadWeatherSummary()
+    }
+
     // =========================================================================
     // Lock / Unlock
     // =========================================================================
@@ -325,6 +429,9 @@ class LockScreenViewModel @Inject constructor(
         autoLockJob?.cancel()
         _showSuccessMessage.value = false
         _isLocked.value = true
+
+        // Refresh weather when locking (user will see updated data on wake)
+        refreshWeatherSummary()
 
         if (_showBootAnimation.value) {
             playBootSequence()
@@ -399,6 +506,30 @@ class LockScreenViewModel @Inject constructor(
             delay(400L)
             _showBootSequence.value = false
         }
+    }
+
+    // =========================================================================
+    // Entity mapping
+    // =========================================================================
+
+    /**
+     * Map a [NotificationEntity] from Room into a [LockScreenNotification] UI model.
+     */
+    private fun NotificationEntity.toLockScreenNotification(): LockScreenNotification {
+        return LockScreenNotification(
+            id = id,
+            appName = appName,
+            title = title,
+            content = content,
+            timestamp = timestamp,
+            formattedTime = try {
+                timeFormatter.format(Date(timestamp))
+            } catch (_: Exception) {
+                "--:--"
+            },
+            priority = priority,
+            category = category
+        )
     }
 
     // =========================================================================

@@ -84,6 +84,17 @@ interface NotificationDao {
     @Query("SELECT COUNT(*) FROM notifications WHERE isDismissed = 0 AND isRead = 0")
     fun getUnreadCount(): Flow<Int>
 
+    /** Returns the most recent unread, non-dismissed notifications up to [limit]. */
+    @Query(
+        """
+        SELECT * FROM notifications
+        WHERE isDismissed = 0 AND isRead = 0
+        ORDER BY timestamp DESC
+        LIMIT :limit
+        """
+    )
+    fun getRecentUnread(limit: Int = 5): Flow<List<NotificationEntity>>
+
     /** Un-snooze all notifications whose snooze window has elapsed. */
     @Query("UPDATE notifications SET isSnoozed = 0, snoozeUntil = 0 WHERE isSnoozed = 1 AND snoozeUntil <= :now")
     suspend fun unsnoozeExpired(now: Long)

@@ -12,9 +12,13 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.castor.app.launcher.LauncherPreferencesManager
 import com.castor.app.launcher.LauncherSettingsScreen
+import com.castor.app.settings.AboutScreen
+import com.castor.app.settings.BatteryOptimizationScreen
 import com.castor.app.settings.ThemeManager
 import com.castor.app.settings.ThemeSelectorScreen
+import com.castor.core.security.SecurePreferences
 import com.castor.app.notes.NoteEditorScreen
 import com.castor.app.notes.NotesScreen
 import com.castor.app.onboarding.OnboardingPreferences
@@ -66,6 +70,8 @@ import java.nio.charset.StandardCharsets
  * - "weather"      — full weather detail screen (curl wttr.in --verbose)
  * - "settings"     — launcher settings (/etc/un-dios/config)
  * - "theme_selector" — terminal color theme picker (/etc/un-dios/themes.conf)
+ * - "battery_optimization" — battery optimization guide (/etc/un-dios/battery-optimization.md)
+ * - "about"        — about screen (/etc/un-dios/about)
  *
  * Note: The app drawer is implemented as a full-screen overlay within HomeScreen
  * rather than as a separate navigation route, since it overlays the home content
@@ -78,7 +84,9 @@ import java.nio.charset.StandardCharsets
  */
 @Composable
 fun CastorNavHost(
-    themeManager: ThemeManager? = null
+    themeManager: ThemeManager? = null,
+    launcherPreferencesManager: LauncherPreferencesManager? = null,
+    securePreferences: SecurePreferences? = null
 ) {
     val navController = rememberNavController()
     val context = LocalContext.current
@@ -246,12 +254,18 @@ fun CastorNavHost(
         }
 
         composable("settings") {
-            LauncherSettingsScreen(
-                onBack = { navController.popBackStack() },
-                onNavigateToUsageStats = { navController.navigate("usage_stats") },
-                onNavigateToThemeSelector = { navController.navigate("theme_selector") },
-                themeManager = themeManager
-            )
+            if (launcherPreferencesManager != null) {
+                LauncherSettingsScreen(
+                    onBack = { navController.popBackStack() },
+                    onNavigateToUsageStats = { navController.navigate("usage_stats") },
+                    onNavigateToThemeSelector = { navController.navigate("theme_selector") },
+                    onNavigateToBatteryOptimization = { navController.navigate("battery_optimization") },
+                    onNavigateToAbout = { navController.navigate("about") },
+                    themeManager = themeManager,
+                    launcherPreferencesManager = launcherPreferencesManager,
+                    securePreferences = securePreferences
+                )
+            }
         }
 
         composable("theme_selector") {
@@ -261,6 +275,18 @@ fun CastorNavHost(
                     onBack = { navController.popBackStack() }
                 )
             }
+        }
+
+        composable("battery_optimization") {
+            BatteryOptimizationScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable("about") {
+            AboutScreen(
+                onBack = { navController.popBackStack() }
+            )
         }
     }
 }

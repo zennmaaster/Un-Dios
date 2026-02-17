@@ -15,8 +15,10 @@ import com.castor.app.desktop.DisplayModeViewModel
 import com.castor.app.desktop.layout.AdaptiveLayoutManager
 import com.castor.app.desktop.layout.DesktopHomeScreen
 import com.castor.app.desktop.window.WindowManager
+import com.castor.app.launcher.LauncherPreferencesManager
 import com.castor.app.navigation.CastorNavHost
 import com.castor.app.settings.ThemeManager
+import com.castor.core.security.SecurePreferences
 import com.castor.core.ui.theme.CastorTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -53,6 +55,12 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var themeManager: ThemeManager
 
+    @Inject
+    lateinit var launcherPreferencesManager: LauncherPreferencesManager
+
+    @Inject
+    lateinit var securePreferences: SecurePreferences
+
     private val displayModeViewModel: DisplayModeViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,7 +80,11 @@ class MainActivity : ComponentActivity() {
                     AdaptiveLayoutManager(
                         displayModeViewModel = displayModeViewModel,
                         phoneContent = {
-                            CastorNavHost(themeManager = themeManager)
+                            CastorNavHost(
+                                themeManager = themeManager,
+                                launcherPreferencesManager = launcherPreferencesManager,
+                                securePreferences = securePreferences
+                            )
                         },
                         desktopContent = { desktopMode ->
                             DesktopHomeScreen(

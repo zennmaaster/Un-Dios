@@ -21,21 +21,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.BatteryFull
-import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.People
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.HorizontalDivider
@@ -54,7 +45,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -64,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.castor.app.lockscreen.LockScreenViewModel
 import com.castor.app.settings.ThemeManager
+import com.castor.core.security.SecurePreferences
 import com.castor.core.ui.theme.TerminalColors
 import com.castor.core.ui.theme.TerminalThemeType
 
@@ -79,14 +70,20 @@ import com.castor.core.ui.theme.TerminalThemeType
  * rest of the Un-Dios launcher experience.
  *
  * @param onBack Called when the user navigates back from settings
+ * @param launcherPreferencesManager Manages persistent launcher preferences via DataStore
+ * @param securePreferences Encrypted storage for sensitive data like API keys
  */
 @Composable
 fun LauncherSettingsScreen(
     onBack: () -> Unit,
     onNavigateToUsageStats: () -> Unit = {},
     onNavigateToThemeSelector: () -> Unit = {},
+    onNavigateToBatteryOptimization: () -> Unit = {},
+    onNavigateToAbout: () -> Unit = {},
     themeManager: ThemeManager? = null,
-    lockScreenViewModel: LockScreenViewModel = hiltViewModel()
+    lockScreenViewModel: LockScreenViewModel = hiltViewModel(),
+    launcherPreferencesManager: LauncherPreferencesManager,
+    securePreferences: SecurePreferences? = null
 ) {
     val context = LocalContext.current
 
@@ -99,6 +96,23 @@ fun LauncherSettingsScreen(
     // Theme preferences
     val selectedTheme = themeManager?.selectedTheme?.collectAsState()?.value
         ?: TerminalThemeType.CATPPUCCIN_MOCHA
+
+    // Launcher preferences (persisted via DataStore)
+    val showDock by launcherPreferencesManager.showDock.collectAsState()
+    val swipeUpDrawer by launcherPreferencesManager.swipeUpDrawer.collectAsState()
+    val doubleTapLock by launcherPreferencesManager.doubleTapLock.collectAsState()
+    val analyticsEnabled by launcherPreferencesManager.analyticsEnabled.collectAsState()
+    val cloudApiEnabled by launcherPreferencesManager.cloudApiEnabled.collectAsState()
+    val dailySummary by launcherPreferencesManager.dailySummary.collectAsState()
+    val categoryTracking by launcherPreferencesManager.categoryTracking.collectAsState()
+
+    // API key dialog state
+    var showApiKeyDialog by remember { mutableStateOf(false) }
+
+    // Determine current API key status for display
+    val hasApiKey = remember(securePreferences) {
+        securePreferences?.getString("cloud_api_key")?.isNotBlank() == true
+    }
 
     Column(
         modifier = Modifier
@@ -138,7 +152,7 @@ fun LauncherSettingsScreen(
                     label = "Dark theme",
                     description = "Always dark (terminal aesthetic)",
                     initialValue = true,
-                    onValueChange = { /* TODO: Persist theme preference */ }
+                    onValueChange = { /* Dark mode is always-on for terminal aesthetic */ }
                 )
             }
 
@@ -176,11 +190,11 @@ fun LauncherSettingsScreen(
 
             item {
                 SettingsToggleRow(
-                    key = "dock.auto_hide",
-                    label = "Auto-hide dock",
-                    description = "Hide dock when apps are open",
-                    initialValue = false,
-                    onValueChange = { /* TODO: Persist dock preference */ }
+                    key = "home.show_dock",
+                    label = "Show quick-launch dock",
+                    description = "Display dock bar on the home screen",
+                    initialValue = showDock,
+                    onValueChange = { launcherPreferencesManager.setShowDock(it) }
                 )
             }
 
@@ -194,21 +208,21 @@ fun LauncherSettingsScreen(
 
             item {
                 SettingsToggleRow(
-                    key = "gestures.enabled",
-                    label = "Gesture navigation",
+                    key = "home.swipe_up_drawer",
+                    label = "Swipe up for drawer",
                     description = "Swipe up: drawer, Swipe down: notifications",
-                    initialValue = true,
-                    onValueChange = { /* TODO: Persist gesture preference */ }
+                    initialValue = swipeUpDrawer,
+                    onValueChange = { launcherPreferencesManager.setSwipeUpDrawer(it) }
                 )
             }
 
             item {
                 SettingsToggleRow(
-                    key = "gestures.double_tap_lock",
+                    key = "home.double_tap_lock",
                     label = "Double-tap to lock",
                     description = "Double-tap home screen to sleep",
-                    initialValue = true,
-                    onValueChange = { /* TODO: Persist */ }
+                    initialValue = doubleTapLock,
+                    onValueChange = { launcherPreferencesManager.setDoubleTapLock(it) }
                 )
             }
 
@@ -281,10 +295,12 @@ fun LauncherSettingsScreen(
             }
 
             item {
-                SettingsValueRow(
-                    key = "privacy.cloud_provider",
-                    value = "none",
-                    description = "Cloud inference provider (optional)"
+                SettingsToggleRow(
+                    key = "privacy.cloud_api_enabled",
+                    label = "Allow cloud AI fallback",
+                    description = "Fall back to cloud when local inference is insufficient",
+                    initialValue = cloudApiEnabled,
+                    onValueChange = { launcherPreferencesManager.setCloudApiEnabled(it) }
                 )
             }
 
@@ -292,8 +308,8 @@ fun LauncherSettingsScreen(
                 SettingsActionRow(
                     key = "privacy.api_keys",
                     label = "Manage API keys",
-                    description = "Configure provider credentials",
-                    onClick = { /* TODO: Open API key manager */ }
+                    description = if (hasApiKey) "Key configured" else "Configure provider credentials",
+                    onClick = { showApiKeyDialog = true }
                 )
             }
 
@@ -302,8 +318,8 @@ fun LauncherSettingsScreen(
                     key = "privacy.analytics",
                     label = "Usage analytics",
                     description = "Send anonymous usage data",
-                    initialValue = false,
-                    onValueChange = { /* TODO: Persist */ }
+                    initialValue = analyticsEnabled,
+                    onValueChange = { launcherPreferencesManager.setAnalyticsEnabled(it) }
                 )
             }
 
@@ -325,21 +341,21 @@ fun LauncherSettingsScreen(
 
             item {
                 SettingsToggleRow(
-                    key = "usage.daily_summary",
+                    key = "intelligence.daily_summary",
                     label = "Daily summary notification",
                     description = "Show a daily screen time summary notification",
-                    initialValue = false,
-                    onValueChange = { /* TODO: Persist daily summary preference */ }
+                    initialValue = dailySummary,
+                    onValueChange = { launcherPreferencesManager.setDailySummary(it) }
                 )
             }
 
             item {
                 SettingsToggleRow(
-                    key = "usage.track_categories",
+                    key = "intelligence.category_tracking",
                     label = "Track app categories",
                     description = "Classify apps into categories for breakdown view",
-                    initialValue = true,
-                    onValueChange = { /* TODO: Persist category tracking preference */ }
+                    initialValue = categoryTracking,
+                    onValueChange = { launcherPreferencesManager.setCategoryTracking(it) }
                 )
             }
 
@@ -431,14 +447,8 @@ fun LauncherSettingsScreen(
                 SettingsActionRow(
                     key = "battery.optimization",
                     label = "Battery optimization",
-                    description = "Disable battery optimization for Un-Dios",
-                    onClick = {
-                        try {
-                            val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            context.startActivity(intent)
-                        } catch (_: Exception) { }
-                    }
+                    description = "Guide to disable battery optimization for Un-Dios",
+                    onClick = onNavigateToBatteryOptimization
                 )
             }
 
@@ -454,6 +464,15 @@ fun LauncherSettingsScreen(
                             context.startActivity(intent)
                         } catch (_: Exception) { }
                     }
+                )
+            }
+
+            item {
+                SettingsActionRow(
+                    key = "system.reset",
+                    label = "Reset to defaults",
+                    description = "Restore all launcher preferences to factory values",
+                    onClick = { launcherPreferencesManager.resetToDefaults() }
                 )
             }
 
@@ -507,10 +526,19 @@ fun LauncherSettingsScreen(
 
             item {
                 SettingsActionRow(
+                    key = "about.details",
+                    label = "About Un-Dios",
+                    description = "System info, neofetch, licenses, and credits",
+                    onClick = onNavigateToAbout
+                )
+            }
+
+            item {
+                SettingsActionRow(
                     key = "licenses",
                     label = "Open source licenses",
                     description = "Third-party library attributions",
-                    onClick = { /* TODO: Open licenses screen */ }
+                    onClick = onNavigateToAbout
                 )
             }
 
@@ -527,6 +555,29 @@ fun LauncherSettingsScreen(
                 )
             }
         }
+    }
+
+    // ---- API Key Dialog ----
+    if (showApiKeyDialog) {
+        val currentKey = securePreferences?.getString("cloud_api_key") ?: ""
+        ApiKeyDialog(
+            currentProvider = ApiProvider.ANTHROPIC,
+            currentKey = currentKey,
+            onSave = { provider, apiKey ->
+                // Store the API key in encrypted storage
+                securePreferences?.putString("cloud_api_key", apiKey)
+                // Store the provider name alongside it
+                securePreferences?.putString("cloud_api_provider", provider.name)
+                // Enable cloud API when a key is saved
+                launcherPreferencesManager.setCloudApiEnabled(true)
+            },
+            onDelete = {
+                securePreferences?.remove("cloud_api_key")
+                securePreferences?.remove("cloud_api_provider")
+                launcherPreferencesManager.setCloudApiEnabled(false)
+            },
+            onDismiss = { showApiKeyDialog = false }
+        )
     }
 }
 
@@ -700,7 +751,7 @@ private fun SettingsToggleRow(
     initialValue: Boolean,
     onValueChange: (Boolean) -> Unit
 ) {
-    var isEnabled by remember { mutableStateOf(initialValue) }
+    var isEnabled by remember(initialValue) { mutableStateOf(initialValue) }
 
     Column(
         modifier = Modifier

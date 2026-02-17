@@ -28,8 +28,10 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -66,17 +68,24 @@ import com.castor.app.search.UniversalSearchOverlay
 import com.castor.app.weather.WeatherCard
 import com.castor.feature.commandbar.CommandBar
 import com.castor.feature.commandbar.CommandBarViewModel
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * The main home screen of Castor, styled as an Ubuntu/Linux desktop environment.
  *
  * Layout structure (top to bottom):
- * 1. SystemStatusBar — persistent dark panel with system stats (CPU, RAM, battery, time)
- * 2. Main workspace area — scrollable content containing:
- *    a. CastorTerminal (via CommandBar) — expanded by default, ~40% of screen
- *    b. Agent cards — 2-column grid (Messages, Media, Reminders, AI)
+ * 1. SystemStatusBar -- persistent dark panel with system stats (CPU, RAM, battery, time)
+ * 2. Main workspace area -- scrollable content with pull-to-refresh containing:
+ *    a. CastorTerminal (via CommandBar) -- expanded by default, ~40% of screen
+ *    b. WeatherCard -- full-width weather display (spans 2 columns)
+ *    c. BriefingCard -- full-width briefing with real data (spans 2 columns)
+ *    d. SuggestionsRow -- context-aware horizontal suggestion chips (spans 2 columns)
+ *    e. Agent cards -- 2-column grid (Messages, Media, Reminders, AI)
  *       each showing live status info
- * 3. QuickLaunchBar — Ubuntu-style dock at the bottom
+ *    f. Last synced timestamp footer
+ * 3. QuickLaunchBar -- Ubuntu-style dock at the bottom
  *
  * The entire home screen is wrapped in a [GestureHandler] that provides:
  * - Swipe up: Opens the GNOME Activities-style app drawer
@@ -91,6 +100,7 @@ import com.castor.feature.commandbar.CommandBarViewModel
  * The overall aesthetic is dark-theme-first, information-dense, monospace stats,
  * designed for power users who want a DIY Linux desktop feel on Android.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onNavigateToMessages: () -> Unit,
@@ -105,11 +115,12 @@ fun HomeScreen(
     onNavigateToWeather: () -> Unit = {},
     viewModel: CommandBarViewModel = hiltViewModel(),
     systemStatsViewModel: SystemStatsViewModel = hiltViewModel(),
-    lockScreenViewModel: LockScreenViewModel = hiltViewModel()
+    lockScreenViewModel: LockScreenViewModel = hiltViewModel(),
+    briefingViewModel: BriefingViewModel = hiltViewModel()
 ) {
     val commandBarState by viewModel.uiState.collectAsState()
 
-    // App drawer visibility state — survives recomposition but not process death
+    // App drawer visibility state -- survives recomposition but not process death
     var isAppDrawerVisible by rememberSaveable { mutableStateOf(false) }
 
     // Universal search overlay visibility state
@@ -125,8 +136,22 @@ fun HomeScreen(
     val showSuccessMessage by lockScreenViewModel.showSuccessMessage.collectAsState()
     val clockTime by lockScreenViewModel.clockTime.collectAsState()
     val clockDate by lockScreenViewModel.clockDate.collectAsState()
+    val currentDate by lockScreenViewModel.currentDate.collectAsState()
+    val weatherSummary by lockScreenViewModel.weatherSummary.collectAsState()
     val recentNotifications by lockScreenViewModel.recentNotifications.collectAsState()
+    val notificationCount by lockScreenViewModel.notificationCount.collectAsState()
     val showNotificationsOnLock by lockScreenViewModel.showNotificationsOnLock.collectAsState()
+
+    // Briefing state from BriefingViewModel (real data)
+    val briefing by briefingViewModel.briefing.collectAsState()
+    val briefingSuggestions by briefingViewModel.suggestions.collectAsState()
+    val isRefreshing by briefingViewModel.isRefreshing.collectAsState()
+    val briefingSummary by briefingViewModel.briefingSummary.collectAsState()
+    val upcomingReminders by briefingViewModel.upcomingReminders.collectAsState()
+    val lastUpdated by briefingViewModel.lastUpdated.collectAsState()
+    val unreadMessages by briefingViewModel.unreadMessages.collectAsState()
+    val quickStatus by briefingViewModel.quickStatus.collectAsState()
+    val timeOfDay = briefingViewModel.getTimeOfDay()
 
     // Biometric authentication wiring
     val context = LocalContext.current
@@ -134,10 +159,14 @@ fun HomeScreen(
     val activity = context as? FragmentActivity
     val canUseBiometric = activity?.let { biometricAuthManager.canAuthenticate(it) } ?: false
 
-    // Placeholder counts — in production, from agent ViewModels
-    val unreadMessages = 5
-    val nowPlaying = "Nothing playing"
-    val nextReminder = "No upcoming tasks"
+    // Live data from BriefingViewModel for agent cards
+    val nowPlaying = quickStatus.nowPlaying ?: "Nothing playing"
+    val nextReminder = if (upcomingReminders.isNotEmpty()) {
+        val first = upcomingReminders.first()
+        "${briefingViewModel.formatReminderTime(first.triggerTimeMs)} ${first.description}"
+    } else {
+        "No upcoming tasks"
+    }
 
     // The entire home screen is layered: home content underneath, app drawer overlay on top,
     // lock screen overlay on the very top
@@ -157,7 +186,7 @@ fun HomeScreen(
                     .background(TerminalColors.Background)
             ) {
                 // ============================================================
-                // 1. System Status Bar (Ubuntu panel — always dark, always visible)
+                // 1. System Status Bar (Ubuntu panel -- always dark, always visible)
                 // ============================================================
                 SystemStatusBar(
                     stats = systemStats,
@@ -169,162 +198,213 @@ fun HomeScreen(
                 )
 
                 // ============================================================
-                // 2. Main Workspace Area (scrollable)
+                // 2. Main Workspace Area (scrollable with pull-to-refresh)
                 // ============================================================
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                PullToRefreshBox(
+                    isRefreshing = isRefreshing,
+                    onRefresh = { briefingViewModel.refreshBriefing() },
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
                 ) {
-                    // ---- Terminal: spans full width ----
-                    item(span = { GridItemSpan(2) }) {
-                        CommandBar(
-                            state = commandBarState,
-                            onSubmit = viewModel::onSubmit,
-                            onToggleExpanded = viewModel::toggleExpanded,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-
-                    // ---- Weather card: spans full width, styled as $ curl wttr.in ----
-                    item(span = { GridItemSpan(2) }) {
-                        WeatherCard(
-                            onClick = onNavigateToWeather,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-
-                    // ---- Section header ----
-                    item(span = { GridItemSpan(2) }) {
-                        SectionHeader(title = "agents")
-                    }
-
-                    // ---- Messages card ----
-                    item {
-                        AgentCard(
-                            title = "Messages",
-                            subtitle = "WhatsApp & Teams",
-                            icon = Icons.Default.ChatBubble,
-                            accentColor = WhatsAppGreen,
-                            onClick = onNavigateToMessages
-                        ) {
-                            AgentStatusText(
-                                text = if (unreadMessages > 0) "$unreadMessages unread" else "All caught up",
-                                isActive = unreadMessages > 0,
-                                activeColor = WhatsAppGreen
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        // ---- Terminal: spans full width ----
+                        item(span = { GridItemSpan(2) }) {
+                            CommandBar(
+                                state = commandBarState,
+                                onSubmit = viewModel::onSubmit,
+                                onToggleExpanded = viewModel::toggleExpanded,
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
-                    }
 
-                    // ---- Media card ----
-                    item {
-                        AgentCard(
-                            title = "Media",
-                            subtitle = "Spotify / YouTube",
-                            icon = Icons.Default.Album,
-                            accentColor = SpotifyGreen,
-                            onClick = onNavigateToMedia
-                        ) {
-                            AgentStatusText(
-                                text = nowPlaying,
-                                isActive = nowPlaying != "Nothing playing",
-                                activeColor = SpotifyGreen
+                        // ---- Weather card: spans full width, styled as $ curl wttr.in ----
+                        item(span = { GridItemSpan(2) }) {
+                            WeatherCard(
+                                onClick = onNavigateToWeather,
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
-                    }
 
-                    // ---- Reminders card ----
-                    item {
-                        AgentCard(
-                            title = "Reminders",
-                            subtitle = "Calendar & tasks",
-                            icon = Icons.Default.Notifications,
-                            accentColor = TeamsBlue,
-                            onClick = onNavigateToReminders
-                        ) {
-                            AgentStatusText(
-                                text = nextReminder,
-                                isActive = nextReminder != "No upcoming tasks",
-                                activeColor = TeamsBlue
+                        // ---- Briefing card: spans full width, real data from BriefingViewModel ----
+                        item(span = { GridItemSpan(2) }) {
+                            BriefingCard(
+                                briefing = briefing,
+                                isRefreshing = isRefreshing,
+                                onRefresh = { briefingViewModel.refreshBriefing() },
+                                briefingSummary = briefingSummary,
+                                upcomingReminders = upcomingReminders,
+                                lastUpdatedMs = lastUpdated,
+                                onViewMessages = onNavigateToMessages,
+                                onViewReminders = onNavigateToReminders,
+                                onViewNotifications = onNavigateToNotificationCenter,
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
-                    }
 
-                    // ---- Contacts card ----
-                    item {
-                        AgentCard(
-                            title = "Contacts",
-                            subtitle = "People & groups",
-                            icon = Icons.Default.Contacts,
-                            accentColor = TerminalColors.Info,
-                            onClick = onNavigateToContacts
-                        ) {
-                            AgentStatusText(
-                                text = "/etc/contacts",
-                                isActive = true,
-                                activeColor = TerminalColors.Info
+                        // ---- Suggestions row: spans full width, context-aware by time of day ----
+                        item(span = { GridItemSpan(2) }) {
+                            SuggestionsRow(
+                                suggestions = briefingSuggestions,
+                                timeOfDay = timeOfDay,
+                                onSuggestionClick = { suggestion ->
+                                    when {
+                                        suggestion.actionData.contains("messages") -> onNavigateToMessages()
+                                        suggestion.actionData.contains("reminders") -> onNavigateToReminders()
+                                        suggestion.actionData.contains("media") -> onNavigateToMedia()
+                                        else -> { /* No-op for dismiss actions */ }
+                                    }
+                                },
+                                onDismiss = { index -> briefingViewModel.dismissSuggestion(index) },
+                                onCheckMessages = onNavigateToMessages,
+                                onViewSchedule = onNavigateToReminders,
+                                onPlayPlaylist = onNavigateToMedia,
+                                onViewNotifications = onNavigateToNotificationCenter,
+                                onViewReminders = onNavigateToReminders,
+                                onScreenTime = onNavigateToUsageStats,
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
-                    }
 
-                    // ---- AI Assistant card ----
-                    item {
-                        AgentCard(
-                            title = "AI Engine",
-                            subtitle = "On-device LLM",
-                            icon = Icons.Default.SmartToy,
-                            accentColor = CastorPrimary,
-                            onClick = { viewModel.toggleExpanded() }
-                        ) {
-                            AgentStatusText(
-                                text = "LOCAL inference",
-                                isActive = true,
-                                activeColor = TerminalColors.Success
-                            )
+                        // ---- Section header ----
+                        item(span = { GridItemSpan(2) }) {
+                            SectionHeader(title = "agents")
                         }
-                    }
 
-                    // ---- Recommendations card ----
-                    item {
-                        AgentCard(
-                            title = "Picks",
-                            subtitle = "Watch recommendations",
-                            icon = Icons.Default.Star,
-                            accentColor = NetflixRed,
-                            onClick = onNavigateToRecommendations
-                        ) {
-                            AgentStatusText(
-                                text = "On-device picks",
-                                isActive = true,
-                                activeColor = NetflixRed
-                            )
+                        // ---- Messages card ----
+                        item {
+                            AgentCard(
+                                title = "Messages",
+                                subtitle = "WhatsApp & Teams",
+                                icon = Icons.Default.ChatBubble,
+                                accentColor = WhatsAppGreen,
+                                onClick = onNavigateToMessages
+                            ) {
+                                AgentStatusText(
+                                    text = if (unreadMessages > 0) "$unreadMessages unread" else "All caught up",
+                                    isActive = unreadMessages > 0,
+                                    activeColor = WhatsAppGreen
+                                )
+                            }
                         }
-                    }
 
-                    // ---- Notes card ----
-                    item {
-                        AgentCard(
-                            title = "Notes",
-                            subtitle = "Scratchpad",
-                            icon = Icons.Default.Edit,
-                            accentColor = TerminalColors.Warning,
-                            onClick = onNavigateToNotes
-                        ) {
-                            AgentStatusText(
-                                text = "~/notes/",
-                                isActive = true,
-                                activeColor = TerminalColors.Warning
-                            )
+                        // ---- Media card ----
+                        item {
+                            AgentCard(
+                                title = "Media",
+                                subtitle = "Spotify / YouTube",
+                                icon = Icons.Default.Album,
+                                accentColor = SpotifyGreen,
+                                onClick = onNavigateToMedia
+                            ) {
+                                AgentStatusText(
+                                    text = nowPlaying,
+                                    isActive = nowPlaying != "Nothing playing",
+                                    activeColor = SpotifyGreen
+                                )
+                            }
                         }
-                    }
 
-                    // Bottom spacing so content isn't hidden behind the dock
-                    item(span = { GridItemSpan(2) }) {
-                        Spacer(modifier = Modifier.height(8.dp))
+                        // ---- Reminders card ----
+                        item {
+                            AgentCard(
+                                title = "Reminders",
+                                subtitle = "Calendar & tasks",
+                                icon = Icons.Default.Notifications,
+                                accentColor = TeamsBlue,
+                                onClick = onNavigateToReminders
+                            ) {
+                                AgentStatusText(
+                                    text = nextReminder,
+                                    isActive = nextReminder != "No upcoming tasks",
+                                    activeColor = TeamsBlue
+                                )
+                            }
+                        }
+
+                        // ---- Contacts card ----
+                        item {
+                            AgentCard(
+                                title = "Contacts",
+                                subtitle = "People & groups",
+                                icon = Icons.Default.Contacts,
+                                accentColor = TerminalColors.Info,
+                                onClick = onNavigateToContacts
+                            ) {
+                                AgentStatusText(
+                                    text = "/etc/contacts",
+                                    isActive = true,
+                                    activeColor = TerminalColors.Info
+                                )
+                            }
+                        }
+
+                        // ---- AI Assistant card ----
+                        item {
+                            AgentCard(
+                                title = "AI Engine",
+                                subtitle = "On-device LLM",
+                                icon = Icons.Default.SmartToy,
+                                accentColor = CastorPrimary,
+                                onClick = { viewModel.toggleExpanded() }
+                            ) {
+                                AgentStatusText(
+                                    text = "LOCAL inference",
+                                    isActive = true,
+                                    activeColor = TerminalColors.Success
+                                )
+                            }
+                        }
+
+                        // ---- Recommendations card ----
+                        item {
+                            AgentCard(
+                                title = "Picks",
+                                subtitle = "Watch recommendations",
+                                icon = Icons.Default.Star,
+                                accentColor = NetflixRed,
+                                onClick = onNavigateToRecommendations
+                            ) {
+                                AgentStatusText(
+                                    text = "On-device picks",
+                                    isActive = true,
+                                    activeColor = NetflixRed
+                                )
+                            }
+                        }
+
+                        // ---- Notes card ----
+                        item {
+                            AgentCard(
+                                title = "Notes",
+                                subtitle = "Scratchpad",
+                                icon = Icons.Default.Edit,
+                                accentColor = TerminalColors.Warning,
+                                onClick = onNavigateToNotes
+                            ) {
+                                AgentStatusText(
+                                    text = "~/notes/",
+                                    isActive = true,
+                                    activeColor = TerminalColors.Warning
+                                )
+                            }
+                        }
+
+                        // ---- Last synced timestamp footer ----
+                        item(span = { GridItemSpan(2) }) {
+                            LastSyncedFooter(lastUpdatedMs = lastUpdated)
+                        }
+
+                        // Bottom spacing so content isn't hidden behind the dock
+                        item(span = { GridItemSpan(2) }) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
                     }
                 }
 
@@ -368,7 +448,7 @@ fun HomeScreen(
                 }
             },
             onOpenConversation = { sender, groupName ->
-                // Navigate to messages — the conversation screen will be opened
+                // Navigate to messages -- the conversation screen will be opened
                 // from the messaging screen's conversation click handler
                 onNavigateToMessages()
             },
@@ -379,7 +459,7 @@ fun HomeScreen(
         )
 
         // ====================================================================
-        // Layer 4: Lock screen overlay (topmost — above everything)
+        // Layer 4: Lock screen overlay (topmost -- above everything)
         // ====================================================================
         LockScreenOverlay(
             isLocked = isLocked,
@@ -388,9 +468,12 @@ fun HomeScreen(
             showSuccessMessage = showSuccessMessage,
             clockTime = clockTime,
             clockDate = clockDate,
+            currentDate = currentDate,
+            weatherSummary = weatherSummary,
             batteryPercent = systemStats.batteryPercent,
             isCharging = systemStats.isCharging,
             notifications = recentNotifications,
+            notificationCount = notificationCount,
             showNotifications = showNotificationsOnLock,
             canUseBiometric = canUseBiometric,
             onBiometricRequested = {
@@ -417,6 +500,11 @@ fun HomeScreen(
                 } else {
                     lockScreenViewModel.unlockScreen()
                 }
+            },
+            onNotificationTap = {
+                // Unlock the screen and navigate to the notification center
+                lockScreenViewModel.unlockScreen()
+                onNavigateToNotificationCenter()
             }
         )
     }
@@ -491,6 +579,35 @@ private fun AgentStatusText(
                 fontFamily = FontFamily.Monospace,
                 fontSize = 11.sp,
                 color = if (isActive) activeColor else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        )
+    }
+}
+
+/**
+ * "Last synced" timestamp footer at the bottom of the home screen grid.
+ * Styled as a terminal comment: `# sync: 2026-02-17T14:30:00`
+ */
+@Composable
+private fun LastSyncedFooter(lastUpdatedMs: Long?) {
+    val syncText = if (lastUpdatedMs != null) {
+        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault())
+        sdf.format(Date(lastUpdatedMs))
+    } else {
+        "never"
+    }
+    Row(
+        horizontalArrangement = Arrangement.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    ) {
+        Text(
+            text = "# sync: $syncText",
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+                color = TerminalColors.Timestamp
             )
         )
     }

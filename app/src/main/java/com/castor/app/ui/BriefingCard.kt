@@ -8,6 +8,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubble
@@ -26,6 +28,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -45,17 +48,26 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.castor.agent.orchestrator.Briefing
+import com.castor.core.data.db.entity.ReminderEntity
 import com.castor.core.ui.theme.TerminalColors
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
- * Home screen briefing card styled as a terminal output block.
+ * Home screen briefing card styled as a terminal log output block.
  *
- * Header shows `$ briefing --today` in the prompt style.
- * Body contains collapsible sections for each briefing domain:
- * calendar, messages, reminders, and media.
+ * Header shows `$ cat /var/log/briefing.log` in the prompt style.
+ * Body contains:
+ * - A real-data briefing summary from [BriefingViewModel]
+ * - Collapsible sections for each briefing domain (calendar, messages, reminders, media)
+ * - Today's agenda section showing next 3 upcoming reminders with times
+ * - Quick action chips: "View Messages", "View Reminders", "View Notifications"
+ * - A "Last updated: HH:mm" footer
  *
  * The card uses monospace typography throughout and the Catppuccin Mocha
  * color palette from [TerminalColors].
@@ -63,6 +75,12 @@ import com.castor.core.ui.theme.TerminalColors
  * @param briefing The current [Briefing] data (null shows a loading/empty state)
  * @param isRefreshing Whether a refresh is currently in progress
  * @param onRefresh Callback to trigger a manual refresh
+ * @param briefingSummary Natural-language summary string from real data
+ * @param upcomingReminders Next 3 upcoming reminders with times
+ * @param lastUpdatedMs Timestamp of last successful refresh (null if never refreshed)
+ * @param onViewMessages Callback when "View Messages" chip is tapped
+ * @param onViewReminders Callback when "View Reminders" chip is tapped
+ * @param onViewNotifications Callback when "View Notifications" chip is tapped
  * @param modifier Modifier for the root composable
  */
 @Composable
@@ -70,6 +88,12 @@ fun BriefingCard(
     briefing: Briefing?,
     isRefreshing: Boolean,
     onRefresh: () -> Unit,
+    briefingSummary: String,
+    upcomingReminders: List<ReminderEntity>,
+    lastUpdatedMs: Long?,
+    onViewMessages: () -> Unit,
+    onViewReminders: () -> Unit,
+    onViewNotifications: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var isExpanded by rememberSaveable { mutableStateOf(true) }
@@ -91,7 +115,7 @@ fun BriefingCard(
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             // ----------------------------------------------------------------
-            // Header: $ briefing --today
+            // Header: $ cat /var/log/briefing.log
             // ----------------------------------------------------------------
             BriefingHeader(
                 isExpanded = isExpanded,
@@ -103,34 +127,24 @@ fun BriefingCard(
             Spacer(modifier = Modifier.height(8.dp))
 
             // ----------------------------------------------------------------
-            // Greeting
+            // Real-data briefing summary (always visible)
             // ----------------------------------------------------------------
-            if (briefing != null) {
-                Text(
-                    text = briefing.greeting,
-                    style = TextStyle(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TerminalColors.Prompt
-                    )
+            val timestampPrefix = formatTimestampPrefix()
+            Text(
+                text = "[$timestampPrefix] $briefingSummary",
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TerminalColors.Prompt
                 )
-            } else {
-                Text(
-                    text = if (isRefreshing) "Generating briefing..." else "No briefing available.",
-                    style = TextStyle(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        color = TerminalColors.Timestamp
-                    )
-                )
-            }
+            )
 
             // ----------------------------------------------------------------
             // Collapsible body
             // ----------------------------------------------------------------
             AnimatedVisibility(
-                visible = isExpanded && briefing != null,
+                visible = isExpanded,
                 enter = expandVertically(
                     animationSpec = spring(stiffness = Spring.StiffnessLow)
                 ),
@@ -138,17 +152,18 @@ fun BriefingCard(
                     animationSpec = spring(stiffness = Spring.StiffnessLow)
                 )
             ) {
-                if (briefing != null) {
-                    Column {
-                        Spacer(modifier = Modifier.height(8.dp))
+                Column {
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                        // Divider
-                        TerminalDivider()
+                    // Divider
+                    TerminalDivider()
 
+                    // ---- Briefing Agent sections (if available) ----
+                    if (briefing != null) {
                         Spacer(modifier = Modifier.height(8.dp))
 
                         // Calendar section
-                        BriefingSection(
+                        BriefingLogLine(
                             icon = Icons.Default.Today,
                             label = "calendar",
                             content = briefing.calendarSummary,
@@ -158,7 +173,7 @@ fun BriefingCard(
                         Spacer(modifier = Modifier.height(6.dp))
 
                         // Messages section
-                        BriefingSection(
+                        BriefingLogLine(
                             icon = Icons.Default.ChatBubble,
                             label = "messages",
                             content = briefing.messageSummary,
@@ -168,7 +183,7 @@ fun BriefingCard(
                         Spacer(modifier = Modifier.height(6.dp))
 
                         // Reminders section
-                        BriefingSection(
+                        BriefingLogLine(
                             icon = Icons.Default.Notifications,
                             label = "reminders",
                             content = briefing.reminderSummary,
@@ -179,19 +194,48 @@ fun BriefingCard(
                         if (briefing.mediaSuggestion != null) {
                             Spacer(modifier = Modifier.height(6.dp))
 
-                            BriefingSection(
+                            BriefingLogLine(
                                 icon = Icons.Default.MusicNote,
                                 label = "media",
                                 content = briefing.mediaSuggestion,
                                 accentColor = TerminalColors.Accent
                             )
                         }
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        // Timestamp footer
-                        BriefingTimestamp(briefing.generatedAt)
+                    } else if (isRefreshing) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "[$timestampPrefix] Generating briefing...",
+                            style = TextStyle(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = TerminalColors.Timestamp
+                            )
+                        )
                     }
+
+                    // ---- Today's Agenda: next 3 upcoming reminders ----
+                    if (upcomingReminders.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        TerminalDivider()
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        AgendaSection(reminders = upcomingReminders)
+                    }
+
+                    // ---- Quick action chips ----
+                    Spacer(modifier = Modifier.height(10.dp))
+                    TerminalDivider()
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    QuickActionChips(
+                        onViewMessages = onViewMessages,
+                        onViewReminders = onViewReminders,
+                        onViewNotifications = onViewNotifications
+                    )
+
+                    // ---- Last updated footer ----
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LastUpdatedFooter(lastUpdatedMs = lastUpdatedMs)
                 }
             }
         }
@@ -204,6 +248,7 @@ fun BriefingCard(
 
 /**
  * Header row: terminal prompt + expand/collapse + refresh controls.
+ * Styled as `$ cat /var/log/briefing.log`.
  */
 @Composable
 private fun BriefingHeader(
@@ -227,7 +272,7 @@ private fun BriefingHeader(
             )
         )
         Text(
-            text = "briefing --today",
+            text = "cat /var/log/briefing.log",
             style = TextStyle(
                 fontFamily = FontFamily.Monospace,
                 fontSize = 13.sp,
@@ -278,16 +323,17 @@ private fun BriefingHeader(
 }
 
 /**
- * A single briefing section: icon + label prefix + content text.
- * Styled as a terminal key-value line.
+ * A single briefing log line with timestamp prefix: `[HH:mm] [label] content`.
+ * Styled as terminal log output.
  */
 @Composable
-private fun BriefingSection(
+private fun BriefingLogLine(
     icon: ImageVector,
     label: String,
     content: String,
     accentColor: androidx.compose.ui.graphics.Color
 ) {
+    val timestamp = formatTimestampPrefix()
     Row(
         verticalAlignment = Alignment.Top,
         modifier = Modifier.fillMaxWidth()
@@ -303,7 +349,7 @@ private fun BriefingSection(
         Spacer(modifier = Modifier.width(6.dp))
         Column {
             Text(
-                text = "[$label]",
+                text = "[$timestamp] [$label]",
                 style = TextStyle(
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
@@ -325,6 +371,138 @@ private fun BriefingSection(
 }
 
 /**
+ * Today's agenda section showing the next 3 upcoming reminders with times.
+ * Styled as a terminal agenda listing.
+ */
+@Composable
+private fun AgendaSection(reminders: List<ReminderEntity>) {
+    // Section header
+    Text(
+        text = "# today's agenda",
+        style = TextStyle(
+            fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = TerminalColors.Accent
+        )
+    )
+
+    Spacer(modifier = Modifier.height(4.dp))
+
+    reminders.take(3).forEach { reminder ->
+        val time = formatReminderTime(reminder.triggerTimeMs)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 2.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Schedule,
+                contentDescription = null,
+                tint = TerminalColors.Warning,
+                modifier = Modifier.size(12.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = time,
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TerminalColors.Info
+                )
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = reminder.description,
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    color = TerminalColors.Output
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+/**
+ * Horizontally scrolling row of quick action chips.
+ * Each chip is styled as a terminal command: `$ view-messages`.
+ */
+@Composable
+private fun QuickActionChips(
+    onViewMessages: () -> Unit,
+    onViewReminders: () -> Unit,
+    onViewNotifications: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        ActionChip(
+            label = "view-messages",
+            accentColor = TerminalColors.Success,
+            onClick = onViewMessages
+        )
+        ActionChip(
+            label = "view-reminders",
+            accentColor = TerminalColors.Warning,
+            onClick = onViewReminders
+        )
+        ActionChip(
+            label = "view-notifications",
+            accentColor = TerminalColors.Info,
+            onClick = onViewNotifications
+        )
+    }
+}
+
+/**
+ * A single quick action chip styled as a terminal command badge: `$ label`.
+ */
+@Composable
+private fun ActionChip(
+    label: String,
+    accentColor: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(accentColor.copy(alpha = 0.12f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "$ ",
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TerminalColors.Prompt
+                )
+            )
+            Text(
+                text = label,
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = accentColor
+                )
+            )
+        }
+    }
+}
+
+/**
  * Horizontal terminal-style divider.
  */
 @Composable
@@ -339,17 +517,22 @@ private fun TerminalDivider() {
 }
 
 /**
- * Footer showing when the briefing was generated, formatted as a terminal comment.
+ * Footer showing when the briefing was last updated: `# last updated: HH:mm`.
  */
 @Composable
-private fun BriefingTimestamp(generatedAt: Long) {
-    val timeAgo = formatBriefingAge(generatedAt)
+private fun LastUpdatedFooter(lastUpdatedMs: Long?) {
+    val timeText = if (lastUpdatedMs != null) {
+        val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
+        sdf.format(Date(lastUpdatedMs))
+    } else {
+        "--:--"
+    }
     Row(
         horizontalArrangement = Arrangement.End,
         modifier = Modifier.fillMaxWidth()
     ) {
         Text(
-            text = "# generated $timeAgo",
+            text = "# last updated: $timeText",
             style = TextStyle(
                 fontFamily = FontFamily.Monospace,
                 fontSize = 10.sp,
@@ -359,21 +542,22 @@ private fun BriefingTimestamp(generatedAt: Long) {
     }
 }
 
-/**
- * Formats a timestamp into a human-readable relative time string.
- */
-private fun formatBriefingAge(timestampMs: Long): String {
-    val deltaMs = System.currentTimeMillis() - timestampMs
-    val minutes = deltaMs / (1000 * 60)
-    val hours = minutes / 60
+// =====================================================================================
+// Formatting helpers
+// =====================================================================================
 
-    return when {
-        minutes < 1 -> "just now"
-        minutes < 60 -> "${minutes}min ago"
-        hours < 24 -> "${hours}h ago"
-        else -> {
-            val days = hours / 24
-            "${days}d ago"
-        }
-    }
+/**
+ * Formats the current time as a log-style timestamp prefix: "HH:mm:ss".
+ */
+private fun formatTimestampPrefix(): String {
+    val sdf = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+    return sdf.format(Date())
+}
+
+/**
+ * Formats a reminder trigger timestamp as "HH:mm" for the agenda display.
+ */
+private fun formatReminderTime(triggerTimeMs: Long): String {
+    val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
+    return sdf.format(Date(triggerTimeMs))
 }
