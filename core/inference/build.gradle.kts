@@ -39,10 +39,16 @@ android {
 dependencies {
     // Project modules
     implementation(project(":core:common"))
+    implementation(project(":core:security"))
 
     // Hilt
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+
+    // Networking (for CloudInferenceEngine)
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.logging)
+    implementation(libs.okhttp.sse)
 
     // Coroutines
     implementation(libs.coroutines.core)
