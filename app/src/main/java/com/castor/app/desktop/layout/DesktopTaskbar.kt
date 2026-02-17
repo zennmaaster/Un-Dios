@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Circle
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Monitor
 import androidx.compose.material.icons.filled.Notifications
@@ -61,6 +62,9 @@ import com.castor.core.ui.theme.TerminalColors
  * @param systemStats System statistics for the tray indicators
  * @param onActivitiesClick Open the Activities/overview screen
  * @param onWindowClick Focus the clicked window
+ * @param onSystemTrayClick Open the system tray panel
+ * @param onNotificationClick Open the notification shade
+ * @param onClipboardClick Open the clipboard history panel
  * @param modifier Modifier for the taskbar container
  */
 @Composable
@@ -70,6 +74,9 @@ fun DesktopTaskbar(
     systemStats: SystemStats,
     onActivitiesClick: () -> Unit,
     onWindowClick: (String) -> Unit,
+    onSystemTrayClick: () -> Unit = {},
+    onNotificationClick: () -> Unit = {},
+    onClipboardClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -140,48 +147,58 @@ fun DesktopTaskbar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // Volume
-            Icon(
-                imageVector = Icons.Default.VolumeUp,
-                contentDescription = "Volume",
-                tint = TerminalColors.Subtext,
-                modifier = Modifier.size(13.dp)
-            )
-
-            // WiFi
-            Icon(
-                imageVector = Icons.Default.Wifi,
-                contentDescription = "WiFi",
-                tint = if (systemStats.wifiConnected) TerminalColors.Success
-                else TerminalColors.Subtext,
-                modifier = Modifier.size(13.dp)
-            )
-
-            // Bluetooth
-            Icon(
-                imageVector = Icons.Default.Bluetooth,
-                contentDescription = "Bluetooth",
-                tint = if (systemStats.bluetoothConnected) TerminalColors.Info
-                else TerminalColors.Subtext,
-                modifier = Modifier.size(13.dp)
-            )
-
-            // Battery
-            Icon(
-                imageVector = if (systemStats.isCharging) Icons.Default.BatteryChargingFull
-                else Icons.Default.BatteryFull,
-                contentDescription = "Battery",
-                tint = getBatteryColor(systemStats.batteryPercent),
-                modifier = Modifier.size(13.dp)
-            )
-            Text(
-                text = "${systemStats.batteryPercent}%",
-                style = TextStyle(
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 9.sp,
-                    color = getBatteryColor(systemStats.batteryPercent)
+            // System tray icons (clickable to open SystemTrayPanel)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .clickable(onClick = onSystemTrayClick)
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
+            ) {
+                // Volume
+                Icon(
+                    imageVector = Icons.Default.VolumeUp,
+                    contentDescription = "Volume",
+                    tint = TerminalColors.Subtext,
+                    modifier = Modifier.size(13.dp)
                 )
-            )
+
+                // WiFi
+                Icon(
+                    imageVector = Icons.Default.Wifi,
+                    contentDescription = "WiFi",
+                    tint = if (systemStats.wifiConnected) TerminalColors.Success
+                    else TerminalColors.Subtext,
+                    modifier = Modifier.size(13.dp)
+                )
+
+                // Bluetooth
+                Icon(
+                    imageVector = Icons.Default.Bluetooth,
+                    contentDescription = "Bluetooth",
+                    tint = if (systemStats.bluetoothConnected) TerminalColors.Info
+                    else TerminalColors.Subtext,
+                    modifier = Modifier.size(13.dp)
+                )
+
+                // Battery
+                Icon(
+                    imageVector = if (systemStats.isCharging) Icons.Default.BatteryChargingFull
+                    else Icons.Default.BatteryFull,
+                    contentDescription = "Battery",
+                    tint = getBatteryColor(systemStats.batteryPercent),
+                    modifier = Modifier.size(13.dp)
+                )
+                Text(
+                    text = "${systemStats.batteryPercent}%",
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 9.sp,
+                        color = getBatteryColor(systemStats.batteryPercent)
+                    )
+                )
+            }
 
             // Separator
             Box(
@@ -189,6 +206,16 @@ fun DesktopTaskbar(
                     .width(1.dp)
                     .height(16.dp)
                     .background(TerminalColors.Surface)
+            )
+
+            // Clipboard icon
+            Icon(
+                imageVector = Icons.Default.ContentPaste,
+                contentDescription = "Clipboard history",
+                tint = TerminalColors.Subtext,
+                modifier = Modifier
+                    .size(13.dp)
+                    .clickable(onClick = onClipboardClick)
             )
 
             // External display indicator
@@ -199,23 +226,35 @@ fun DesktopTaskbar(
                 modifier = Modifier.size(13.dp)
             )
 
-            // Notification badge
-            if (systemStats.unreadNotifications > 0) {
-                Box(
-                    modifier = Modifier
-                        .size(18.dp)
-                        .clip(CircleShape)
-                        .background(TerminalColors.BadgeRed.copy(alpha = 0.2f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = systemStats.unreadNotifications.toString(),
-                        style = TextStyle(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TerminalColors.BadgeRed
+            // Notification badge (clickable to open NotificationShade)
+            Box(
+                modifier = Modifier
+                    .clickable(onClick = onNotificationClick)
+            ) {
+                if (systemStats.unreadNotifications > 0) {
+                    Box(
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .background(TerminalColors.BadgeRed.copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = systemStats.unreadNotifications.toString(),
+                            style = TextStyle(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TerminalColors.BadgeRed
+                            )
                         )
+                    }
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Notifications,
+                        contentDescription = "Notifications",
+                        tint = TerminalColors.Subtext,
+                        modifier = Modifier.size(13.dp)
                     )
                 }
             }

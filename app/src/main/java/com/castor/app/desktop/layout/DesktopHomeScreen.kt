@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Terminal
@@ -31,6 +32,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.castor.app.desktop.DisplayMode
+import com.castor.app.desktop.activities.ActivitiesOverview
+import com.castor.app.desktop.clipboard.ClipboardHistoryManager
+import com.castor.app.desktop.clipboard.ClipboardPanel
+import com.castor.app.desktop.filemanager.FileManagerScreen
+import com.castor.app.desktop.systray.NotificationItem
+import com.castor.app.desktop.systray.NotificationShade
+import com.castor.app.desktop.systray.SystemTrayPanel
 import com.castor.app.desktop.window.DesktopWindow
 import com.castor.app.desktop.window.WindowFrame
 import com.castor.app.desktop.window.WindowManager
@@ -76,18 +84,24 @@ import com.castor.feature.reminders.ui.RemindersScreen
  * @param desktopMode The detected desktop display mode with resolution info
  * @param windowManager Singleton window manager for opening/closing/tiling windows
  * @param onNavigateToSettings Callback to open settings in a window or standalone
+ * @param clipboardManager Optional clipboard history manager for clipboard panel
  */
 @Composable
 fun DesktopHomeScreen(
     desktopMode: DisplayMode.Desktop,
     windowManager: WindowManager,
-    onNavigateToSettings: () -> Unit
+    onNavigateToSettings: () -> Unit,
+    clipboardManager: ClipboardHistoryManager? = null
 ) {
     val commandBarViewModel: CommandBarViewModel = hiltViewModel()
     val commandBarState by commandBarViewModel.uiState.collectAsState()
     val windowState by windowManager.state.collectAsState()
 
     var isAppDrawerVisible by rememberSaveable { mutableStateOf(false) }
+    var isActivitiesVisible by rememberSaveable { mutableStateOf(false) }
+    var isSystemTrayVisible by rememberSaveable { mutableStateOf(false) }
+    var isNotificationShadeVisible by rememberSaveable { mutableStateOf(false) }
+    var isClipboardVisible by rememberSaveable { mutableStateOf(false) }
 
     // Placeholder system stats — same pattern as HomeScreen
     val systemStats = remember {
@@ -105,6 +119,36 @@ fun DesktopHomeScreen(
         )
     }
 
+    // Placeholder notification items
+    val notifications = remember {
+        listOf(
+            NotificationItem(
+                id = "notif-1",
+                appName = "Signal",
+                title = "New message",
+                text = "Hey, are you free for lunch today?",
+                timestamp = "14:28",
+                packageName = "org.thoughtcrime.securesms"
+            ),
+            NotificationItem(
+                id = "notif-2",
+                appName = "Calendar",
+                title = "Meeting in 15 minutes",
+                text = "Sprint planning — Conference Room B",
+                timestamp = "14:17",
+                packageName = "com.google.android.calendar"
+            ),
+            NotificationItem(
+                id = "notif-3",
+                appName = "System",
+                title = "Update available",
+                text = "Un-Dios v2.1.0 is ready to install",
+                timestamp = "13:45",
+                packageName = "com.castor.app"
+            )
+        )
+    }
+
     // Track running window IDs for the dock indicators
     val runningWindowIds = remember(windowState.windows) {
         windowState.windows.map { it.id }.toSet()
@@ -112,7 +156,7 @@ fun DesktopHomeScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         // ====================================================================
-        // Main desktop layout
+        // Layer 1: Main desktop layout
         // ====================================================================
         Column(
             modifier = Modifier
@@ -205,6 +249,17 @@ fun DesktopHomeScreen(
                             )
                         }
                     },
+                    onOpenFiles = {
+                        windowManager.openWindow(
+                            id = "files",
+                            title = "file-manager",
+                            icon = Icons.Default.Folder
+                        ) {
+                            FileManagerScreen(
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    },
                     onOpenAppDrawer = { isAppDrawerVisible = true }
                 )
 
@@ -226,18 +281,85 @@ fun DesktopHomeScreen(
                 windows = windowState.windows,
                 activeWindowId = windowState.activeWindowId,
                 systemStats = systemStats,
-                onActivitiesClick = { isAppDrawerVisible = true },
-                onWindowClick = { windowManager.focusWindow(it) }
+                onActivitiesClick = { isActivitiesVisible = true },
+                onWindowClick = { windowManager.focusWindow(it) },
+                onSystemTrayClick = {
+                    isSystemTrayVisible = !isSystemTrayVisible
+                    isNotificationShadeVisible = false
+                    isClipboardVisible = false
+                },
+                onNotificationClick = {
+                    isNotificationShadeVisible = !isNotificationShadeVisible
+                    isSystemTrayVisible = false
+                    isClipboardVisible = false
+                },
+                onClipboardClick = {
+                    isClipboardVisible = !isClipboardVisible
+                    isSystemTrayVisible = false
+                    isNotificationShadeVisible = false
+                }
             )
         }
 
         // ====================================================================
-        // App Drawer Overlay (same as phone, but covers whole desktop)
+        // Layer 2: App Drawer Overlay (same as phone, but covers whole desktop)
         // ====================================================================
         AppDrawer(
             isVisible = isAppDrawerVisible,
             onDismiss = { isAppDrawerVisible = false }
         )
+
+        // ====================================================================
+        // Layer 3: Activities Overview Overlay
+        // ====================================================================
+        ActivitiesOverview(
+            isVisible = isActivitiesVisible,
+            onDismiss = { isActivitiesVisible = false },
+            windowManager = windowManager,
+            onWindowClick = { windowId ->
+                windowManager.focusWindow(windowId)
+                isActivitiesVisible = false
+            }
+        )
+
+        // ====================================================================
+        // Layer 4: System Tray Panel Overlay
+        // ====================================================================
+        SystemTrayPanel(
+            isVisible = isSystemTrayVisible,
+            onDismiss = { isSystemTrayVisible = false },
+            systemStats = systemStats,
+            onOpenSettings = {
+                isSystemTrayVisible = false
+                onNavigateToSettings()
+            }
+        )
+
+        // ====================================================================
+        // Layer 5: Notification Shade Overlay
+        // ====================================================================
+        NotificationShade(
+            isVisible = isNotificationShadeVisible,
+            onDismiss = { isNotificationShadeVisible = false },
+            notifications = notifications,
+            onNotificationClick = { _ ->
+                isNotificationShadeVisible = false
+            },
+            onClearAll = {
+                isNotificationShadeVisible = false
+            }
+        )
+
+        // ====================================================================
+        // Layer 6: Clipboard Panel Overlay
+        // ====================================================================
+        if (clipboardManager != null) {
+            ClipboardPanel(
+                isVisible = isClipboardVisible,
+                onDismiss = { isClipboardVisible = false },
+                clipboardManager = clipboardManager
+            )
+        }
     }
 }
 

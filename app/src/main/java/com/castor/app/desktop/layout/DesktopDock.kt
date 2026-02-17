@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Terminal
@@ -64,6 +65,7 @@ import com.castor.core.ui.theme.TerminalColors
  * @param onOpenMedia Open/focus the media window
  * @param onOpenReminders Open/focus the reminders window
  * @param onOpenAI Open/focus the AI engine window
+ * @param onOpenFiles Open/focus the file manager window
  * @param onOpenAppDrawer Open the app drawer overlay
  * @param modifier Modifier for the dock container
  */
@@ -76,6 +78,7 @@ fun DesktopDock(
     onOpenMedia: () -> Unit,
     onOpenReminders: () -> Unit,
     onOpenAI: () -> Unit,
+    onOpenFiles: () -> Unit = {},
     onOpenAppDrawer: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -133,6 +136,15 @@ fun DesktopDock(
             isRunning = "ai-engine" in runningWindowIds,
             isActive = activeWindowId == "ai-engine",
             onClick = onOpenAI
+        )
+
+        DockIcon(
+            icon = Icons.Default.Folder,
+            label = "files",
+            tint = TerminalColors.Warning,
+            isRunning = "files" in runningWindowIds,
+            isActive = activeWindowId == "files",
+            onClick = onOpenFiles
         )
 
         // ---- Spacer to push app drawer to bottom ----
