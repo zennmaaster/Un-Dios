@@ -7,6 +7,8 @@ import com.castor.core.data.db.dao.BookSyncDao
 import com.castor.core.data.db.dao.ConversationDao
 import com.castor.core.data.db.dao.MediaQueueDao
 import com.castor.core.data.db.dao.MessageDao
+import com.castor.core.data.db.dao.NoteDao
+import com.castor.core.data.db.dao.NotificationDao
 import com.castor.core.data.db.dao.RecommendationDao
 import com.castor.core.data.db.dao.ReminderDao
 import com.castor.core.data.db.dao.TasteProfileDao
@@ -51,4 +53,6 @@ object DatabaseModule {
     @Provides fun provideTasteProfileDao(db: CastorDatabase): TasteProfileDao = db.tasteProfileDao()
     @Provides fun provideRecommendationDao(db: CastorDatabase): RecommendationDao = db.recommendationDao()
     @Provides fun provideBookSyncDao(db: CastorDatabase): BookSyncDao = db.bookSyncDao()
+    @Provides fun provideNoteDao(db: CastorDatabase): NoteDao = db.noteDao()
+    @Provides fun provideNotificationDao(db: CastorDatabase): NotificationDao = db.notificationDao()
 }

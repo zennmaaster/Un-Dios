@@ -8,6 +8,7 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalContext
 
 private val LightColorScheme = lightColorScheme(
@@ -33,8 +34,22 @@ private val DarkColorScheme = darkColorScheme(
     onSurface = CastorOnSurfaceDark
 )
 
+/**
+ * Root theme composable for the Un-Dios launcher.
+ *
+ * Wraps Material 3 theming with the terminal color scheme provided
+ * through [LocalTerminalColors]. All composables that read from
+ * [TerminalColors] will automatically pick up the active color scheme.
+ *
+ * @param terminalColorScheme The terminal color scheme to apply.
+ *   Defaults to [CatppuccinMocha] (the original default).
+ * @param darkTheme Whether the Material 3 color scheme should use dark mode.
+ * @param dynamicColor Whether to use Material You dynamic colors (API 31+).
+ * @param content The composable content tree.
+ */
 @Composable
 fun CastorTheme(
+    terminalColorScheme: TerminalColorScheme = CatppuccinMocha,
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit
@@ -48,9 +63,11 @@ fun CastorTheme(
         else -> LightColorScheme
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = CastorTypography,
-        content = content
-    )
+    CompositionLocalProvider(LocalTerminalColors provides terminalColorScheme) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = CastorTypography,
+            content = content
+        )
+    }
 }

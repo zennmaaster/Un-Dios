@@ -63,7 +63,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.castor.app.lockscreen.LockScreenViewModel
+import com.castor.app.settings.ThemeManager
 import com.castor.core.ui.theme.TerminalColors
+import com.castor.core.ui.theme.TerminalThemeType
 
 /**
  * Launcher settings screen accessible via long-press on the home screen.
@@ -82,6 +84,8 @@ import com.castor.core.ui.theme.TerminalColors
 fun LauncherSettingsScreen(
     onBack: () -> Unit,
     onNavigateToUsageStats: () -> Unit = {},
+    onNavigateToThemeSelector: () -> Unit = {},
+    themeManager: ThemeManager? = null,
     lockScreenViewModel: LockScreenViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -91,6 +95,10 @@ fun LauncherSettingsScreen(
     val showBootAnimation by lockScreenViewModel.showBootAnimation.collectAsState()
     val showNotificationsOnLock by lockScreenViewModel.showNotificationsOnLock.collectAsState()
     val lockTimeoutMs by lockScreenViewModel.lockTimeoutMs.collectAsState()
+
+    // Theme preferences
+    val selectedTheme = themeManager?.selectedTheme?.collectAsState()?.value
+        ?: TerminalThemeType.CATPPUCCIN_MOCHA
 
     Column(
         modifier = Modifier
@@ -135,10 +143,11 @@ fun LauncherSettingsScreen(
             }
 
             item {
-                SettingsValueRow(
+                SettingsActionRow(
                     key = "theme.colors",
-                    value = "catppuccin-mocha",
-                    description = "Terminal color scheme"
+                    label = "Terminal theme",
+                    description = "Current: ${selectedTheme.displayName}",
+                    onClick = onNavigateToThemeSelector
                 )
             }
 

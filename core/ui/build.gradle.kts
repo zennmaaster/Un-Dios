@@ -53,6 +53,9 @@ dependencies {
     implementation(libs.compose.animation)
     debugImplementation(libs.compose.ui.tooling)
 
+    // DataStore (for ThemePreferences key definition)
+    implementation(libs.datastore.preferences)
+
     // Image loading
     implementation(libs.coil.compose)
 }

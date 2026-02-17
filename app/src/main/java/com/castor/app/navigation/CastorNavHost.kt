@@ -13,16 +13,22 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.castor.app.launcher.LauncherSettingsScreen
+import com.castor.app.settings.ThemeManager
+import com.castor.app.settings.ThemeSelectorScreen
+import com.castor.app.notes.NoteEditorScreen
+import com.castor.app.notes.NotesScreen
 import com.castor.app.onboarding.OnboardingPreferences
 import com.castor.app.onboarding.OnboardingScreen
 import com.castor.app.onboarding.onboardingDataStore
 import com.castor.app.ui.HomeScreen
 import com.castor.app.usage.UsageStatsScreen
+import com.castor.app.weather.WeatherDetailScreen
 import com.castor.feature.media.sync.ui.BookSyncScreen
 import com.castor.feature.media.ui.MediaScreen
 import com.castor.feature.messaging.contacts.ContactsScreen
 import com.castor.feature.messaging.ui.ConversationScreen
 import com.castor.feature.messaging.ui.MessagingScreen
+import com.castor.feature.notifications.center.NotificationCenterScreen
 import com.castor.feature.recommendations.ui.RecommendationsScreen
 import com.castor.feature.recommendations.ui.WatchHistoryScreen
 import com.castor.feature.reminders.ui.RemindersScreen
@@ -54,7 +60,12 @@ import java.nio.charset.StandardCharsets
  * - "media"        — media aggregation
  * - "reminders"    — smart reminders
  * - "usage_stats"  — screen time / app usage stats dashboard
+ * - "notification_center" — smart notification management (journalctl-style)
+ * - "notes"        — quick notes / scratchpad (terminal-styled note list)
+ * - "note_editor/{noteId}" — vim-styled note editor (-1 for new note)
+ * - "weather"      — full weather detail screen (curl wttr.in --verbose)
  * - "settings"     — launcher settings (/etc/un-dios/config)
+ * - "theme_selector" — terminal color theme picker (/etc/un-dios/themes.conf)
  *
  * Note: The app drawer is implemented as a full-screen overlay within HomeScreen
  * rather than as a separate navigation route, since it overlays the home content
@@ -66,7 +77,9 @@ import java.nio.charset.StandardCharsets
  * window via [WindowManager.openWindow] rather than via navigation routes.
  */
 @Composable
-fun CastorNavHost() {
+fun CastorNavHost(
+    themeManager: ThemeManager? = null
+) {
     val navController = rememberNavController()
     val context = LocalContext.current
 
@@ -107,7 +120,16 @@ fun CastorNavHost() {
                 onNavigateToReminders = { navController.navigate("reminders") },
                 onNavigateToRecommendations = { navController.navigate("recommendations") },
                 onNavigateToUsageStats = { navController.navigate("usage_stats") },
-                onNavigateToSettings = { navController.navigate("settings") }
+                onNavigateToSettings = { navController.navigate("settings") },
+                onNavigateToNotificationCenter = { navController.navigate("notification_center") },
+                onNavigateToNotes = { navController.navigate("notes") },
+                onNavigateToWeather = { navController.navigate("weather") }
+            )
+        }
+
+        composable("notification_center") {
+            NotificationCenterScreen(
+                onBack = { navController.popBackStack() }
             )
         }
 
@@ -194,11 +216,51 @@ fun CastorNavHost() {
             )
         }
 
+        composable("notes") {
+            NotesScreen(
+                onBack = { navController.popBackStack() },
+                onOpenNote = { noteId ->
+                    navController.navigate("note_editor/$noteId")
+                }
+            )
+        }
+
+        composable(
+            route = "note_editor/{noteId}",
+            arguments = listOf(
+                navArgument("noteId") {
+                    type = NavType.LongType
+                    defaultValue = -1L
+                }
+            )
+        ) {
+            NoteEditorScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable("weather") {
+            WeatherDetailScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
         composable("settings") {
             LauncherSettingsScreen(
                 onBack = { navController.popBackStack() },
-                onNavigateToUsageStats = { navController.navigate("usage_stats") }
+                onNavigateToUsageStats = { navController.navigate("usage_stats") },
+                onNavigateToThemeSelector = { navController.navigate("theme_selector") },
+                themeManager = themeManager
             )
+        }
+
+        composable("theme_selector") {
+            if (themeManager != null) {
+                ThemeSelectorScreen(
+                    themeManager = themeManager,
+                    onBack = { navController.popBackStack() }
+                )
+            }
         }
     }
 }

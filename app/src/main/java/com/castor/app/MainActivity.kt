@@ -7,6 +7,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import com.castor.app.desktop.DisplayModeDetector
 import com.castor.app.desktop.DisplayModeViewModel
@@ -14,6 +16,7 @@ import com.castor.app.desktop.layout.AdaptiveLayoutManager
 import com.castor.app.desktop.layout.DesktopHomeScreen
 import com.castor.app.desktop.window.WindowManager
 import com.castor.app.navigation.CastorNavHost
+import com.castor.app.settings.ThemeManager
 import com.castor.core.ui.theme.CastorTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -47,6 +50,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var windowManager: WindowManager
 
+    @Inject
+    lateinit var themeManager: ThemeManager
+
     private val displayModeViewModel: DisplayModeViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,12 +63,16 @@ class MainActivity : ComponentActivity() {
         displayModeViewModel.startMonitoring()
 
         setContent {
-            CastorTheme {
+            // Collect the active theme so that CastorTheme recomposes
+            // when the user switches themes via the theme selector.
+            val activeTheme by themeManager.currentTheme.collectAsState()
+
+            CastorTheme(terminalColorScheme = activeTheme.colors) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     AdaptiveLayoutManager(
                         displayModeViewModel = displayModeViewModel,
                         phoneContent = {
-                            CastorNavHost()
+                            CastorNavHost(themeManager = themeManager)
                         },
                         desktopContent = { desktopMode ->
                             DesktopHomeScreen(

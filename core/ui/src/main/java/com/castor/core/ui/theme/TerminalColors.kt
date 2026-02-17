@@ -1,70 +1,89 @@
 package com.castor.core.ui.theme
 
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 /**
- * Catppuccin Mocha-inspired color palette for the Castor terminal experience.
- * These colors provide the Ubuntu/Linux desktop feel with a modern twist.
- * Always used regardless of the system theme — the terminal is always dark.
+ * CompositionLocal providing the active [TerminalColorScheme].
+ *
+ * Defaults to [CatppuccinMocha] so that previews and tests work without
+ * explicitly wrapping in a provider. In production, [CastorTheme] supplies
+ * the user-selected scheme via [CompositionLocalProvider].
+ */
+val LocalTerminalColors = staticCompositionLocalOf { CatppuccinMocha }
+
+/**
+ * Global accessor for terminal theme colors.
+ *
+ * Every property delegates to the current [TerminalColorScheme] provided
+ * through [LocalTerminalColors]. This means all 160+ existing call sites
+ * (e.g. `TerminalColors.Background`) continue to compile and work without
+ * modification, while the actual color values change dynamically when the
+ * user switches themes.
+ *
+ * IMPORTANT: These properties use custom `get()` accessors and must be
+ * read from within a `@Composable` scope so that the CompositionLocal
+ * resolution works correctly.
  */
 object TerminalColors {
-    /** Deep dark base background — Catppuccin Mocha "Base" */
-    val Background = Color(0xFF1E1E2E)
+
+    /** Deep dark base background */
+    val Background: Color get() = LocalTerminalColors.current.background
 
     /** Slightly lighter surface for cards and elevated elements */
-    val Surface = Color(0xFF313244)
+    val Surface: Color get() = LocalTerminalColors.current.surface
 
-    /** Green prompt text — the classic terminal prompt color */
-    val Prompt = Color(0xFFA6E3A1)
+    /** Green prompt text -- the classic terminal prompt color */
+    val Prompt: Color get() = LocalTerminalColors.current.prompt
 
     /** Light text for user-typed commands */
-    val Command = Color(0xFFCDD6F4)
+    val Command: Color get() = LocalTerminalColors.current.command
 
     /** Slightly dimmer text for command output / responses */
-    val Output = Color(0xFFBAC2DE)
+    val Output: Color get() = LocalTerminalColors.current.output
 
     /** Red for error messages and failed commands */
-    val Error = Color(0xFFF38BA8)
+    val Error: Color get() = LocalTerminalColors.current.error
 
     /** Orange for warnings and caution indicators */
-    val Warning = Color(0xFFFAB387)
+    val Warning: Color get() = LocalTerminalColors.current.warning
 
     /** Green for success confirmations */
-    val Success = Color(0xFFA6E3A1)
+    val Success: Color get() = LocalTerminalColors.current.success
 
     /** Blue for informational messages */
-    val Info = Color(0xFF89B4FA)
+    val Info: Color get() = LocalTerminalColors.current.info
 
-    /** Purple accent — Castor brand identity within the terminal */
-    val Accent = Color(0xFFCBA6F7)
+    /** Purple accent -- Castor brand identity within the terminal */
+    val Accent: Color get() = LocalTerminalColors.current.accent
 
     /** Warm white cursor color */
-    val Cursor = Color(0xFFF5E0DC)
+    val Cursor: Color get() = LocalTerminalColors.current.cursor
 
     /** Selection highlight for text selection */
-    val Selection = Color(0xFF45475A)
+    val Selection: Color get() = LocalTerminalColors.current.selection
 
     /** Even darker color for the top status bar panel */
-    val StatusBar = Color(0xFF181825)
+    val StatusBar: Color get() = LocalTerminalColors.current.statusBar
 
     /** Dim color for timestamps and secondary metadata */
-    val Timestamp = Color(0xFF6C7086)
+    val Timestamp: Color get() = LocalTerminalColors.current.timestamp
 
     /** Overlay color for semi-transparent backgrounds (dock, panels) */
-    val Overlay = Color(0xFF11111B)
+    val Overlay: Color get() = LocalTerminalColors.current.overlay
 
     /** Subtext for less important UI elements */
-    val Subtext = Color(0xFF585B70)
+    val Subtext: Color get() = LocalTerminalColors.current.subtext
 
     /** Badge background for notification counts */
-    val BadgeRed = Color(0xFFF38BA8)
+    val BadgeRed: Color get() = LocalTerminalColors.current.badgeRed
 
     /** Local privacy tier indicator */
-    val PrivacyLocal = Color(0xFFA6E3A1)
+    val PrivacyLocal: Color get() = LocalTerminalColors.current.privacyLocal
 
     /** Cloud privacy tier indicator */
-    val PrivacyCloud = Color(0xFFF9E2AF)
+    val PrivacyCloud: Color get() = LocalTerminalColors.current.privacyCloud
 
     /** Anonymized privacy tier indicator */
-    val PrivacyAnonymized = Color(0xFF89B4FA)
+    val PrivacyAnonymized: Color get() = LocalTerminalColors.current.privacyAnonymized
 }

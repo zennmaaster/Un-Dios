@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Contacts
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Star
@@ -62,6 +63,7 @@ import com.castor.core.ui.theme.NetflixRed
 import com.castor.core.ui.theme.TerminalColors
 import com.castor.core.ui.theme.WhatsAppGreen
 import com.castor.app.search.UniversalSearchOverlay
+import com.castor.app.weather.WeatherCard
 import com.castor.feature.commandbar.CommandBar
 import com.castor.feature.commandbar.CommandBarViewModel
 
@@ -98,6 +100,9 @@ fun HomeScreen(
     onNavigateToRecommendations: () -> Unit,
     onNavigateToUsageStats: () -> Unit,
     onNavigateToSettings: () -> Unit,
+    onNavigateToNotificationCenter: () -> Unit = {},
+    onNavigateToNotes: () -> Unit = {},
+    onNavigateToWeather: () -> Unit = {},
     viewModel: CommandBarViewModel = hiltViewModel(),
     systemStatsViewModel: SystemStatsViewModel = hiltViewModel(),
     lockScreenViewModel: LockScreenViewModel = hiltViewModel()
@@ -156,6 +161,7 @@ fun HomeScreen(
                 // ============================================================
                 SystemStatusBar(
                     stats = systemStats,
+                    onNotificationClick = onNavigateToNotificationCenter,
                     modifier = Modifier
                         .fillMaxWidth()
                         .statusBarsPadding()
@@ -180,6 +186,14 @@ fun HomeScreen(
                             state = commandBarState,
                             onSubmit = viewModel::onSubmit,
                             onToggleExpanded = viewModel::toggleExpanded,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    // ---- Weather card: spans full width, styled as $ curl wttr.in ----
+                    item(span = { GridItemSpan(2) }) {
+                        WeatherCard(
+                            onClick = onNavigateToWeather,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -291,6 +305,23 @@ fun HomeScreen(
                         }
                     }
 
+                    // ---- Notes card ----
+                    item {
+                        AgentCard(
+                            title = "Notes",
+                            subtitle = "Scratchpad",
+                            icon = Icons.Default.Edit,
+                            accentColor = TerminalColors.Warning,
+                            onClick = onNavigateToNotes
+                        ) {
+                            AgentStatusText(
+                                text = "~/notes/",
+                                isActive = true,
+                                activeColor = TerminalColors.Warning
+                            )
+                        }
+                    }
+
                     // Bottom spacing so content isn't hidden behind the dock
                     item(span = { GridItemSpan(2) }) {
                         Spacer(modifier = Modifier.height(8.dp))
@@ -332,6 +363,7 @@ fun HomeScreen(
                     "media" -> onNavigateToMedia()
                     "reminders" -> onNavigateToReminders()
                     "recommendations" -> onNavigateToRecommendations()
+                    "notes" -> onNavigateToNotes()
                     "settings" -> onNavigateToSettings()
                 }
             },

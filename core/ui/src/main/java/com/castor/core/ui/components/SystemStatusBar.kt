@@ -4,6 +4,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -68,7 +69,8 @@ data class SystemStats(
 @Composable
 fun SystemStatusBar(
     stats: SystemStats,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onNotificationClick: (() -> Unit)? = null
 ) {
     val monoStyle = TextStyle(
         fontFamily = FontFamily.Monospace,
@@ -137,13 +139,20 @@ fun SystemStatusBar(
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // Notification count
+            // Notification count — tappable to open notification center
             if (stats.unreadNotifications > 0) {
                 Box(
                     modifier = Modifier
                         .background(
                             TerminalColors.BadgeRed.copy(alpha = 0.2f),
                             RoundedCornerShape(4.dp)
+                        )
+                        .then(
+                            if (onNotificationClick != null) {
+                                Modifier.clickable(onClick = onNotificationClick)
+                            } else {
+                                Modifier
+                            }
                         )
                         .padding(horizontal = 4.dp, vertical = 1.dp)
                 ) {
@@ -169,7 +178,15 @@ fun SystemStatusBar(
                     imageVector = Icons.Default.Notifications,
                     contentDescription = "No notifications",
                     tint = TerminalColors.Subtext,
-                    modifier = Modifier.size(14.dp)
+                    modifier = Modifier
+                        .size(14.dp)
+                        .then(
+                            if (onNotificationClick != null) {
+                                Modifier.clickable(onClick = onNotificationClick)
+                            } else {
+                                Modifier
+                            }
+                        )
                 )
             }
         }
