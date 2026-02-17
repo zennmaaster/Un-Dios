@@ -108,15 +108,18 @@ fun UniversalSearchOverlay(
     onNavigate: (String) -> Unit = {},
     onOpenConversation: (sender: String, groupName: String?) -> Unit = { _, _ -> },
     onOpenAppDrawer: () -> Unit = {},
+    initialQuery: String = "",
     viewModel: UniversalSearchViewModel = hiltViewModel()
 ) {
     val searchState by viewModel.searchState.collectAsState()
     val query by viewModel.searchQuery.collectAsState()
 
-    // Clear search when overlay is hidden
-    LaunchedEffect(isVisible) {
+    // Clear search when overlay is hidden, or pre-fill with initialQuery when shown
+    LaunchedEffect(isVisible, initialQuery) {
         if (!isVisible) {
             viewModel.clearSearch()
+        } else if (initialQuery.isNotBlank()) {
+            viewModel.onQueryChanged(initialQuery)
         }
     }
 

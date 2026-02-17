@@ -113,6 +113,7 @@ fun CastorTerminal(
     isExpanded: Boolean,
     onToggleExpanded: () -> Unit,
     showTypingAnimation: Boolean = false,
+    onInputChanged: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val monoStyle = TextStyle(
@@ -161,6 +162,7 @@ fun CastorTerminal(
                 // Input line
                 TerminalInputLine(
                     onSubmit = onSubmit,
+                    onInputChanged = onInputChanged,
                     isProcessing = isProcessing,
                     monoStyle = monoStyle,
                     modifier = Modifier.fillMaxWidth()
@@ -176,6 +178,7 @@ fun CastorTerminal(
         ) {
             TerminalInputLine(
                 onSubmit = onSubmit,
+                onInputChanged = onInputChanged,
                 isProcessing = isProcessing,
                 monoStyle = monoStyle,
                 modifier = Modifier.fillMaxWidth()
@@ -616,6 +619,7 @@ private fun ProcessingIndicator(monoStyle: TextStyle) {
 @Composable
 private fun TerminalInputLine(
     onSubmit: (String) -> Unit,
+    onInputChanged: (String) -> Unit = {},
     isProcessing: Boolean,
     monoStyle: TextStyle,
     modifier: Modifier = Modifier
@@ -684,7 +688,10 @@ private fun TerminalInputLine(
         Box(modifier = Modifier.weight(1f).height(IntrinsicSize.Min)) {
             BasicTextField(
                 value = inputText,
-                onValueChange = { inputText = it },
+                onValueChange = {
+                    inputText = it
+                    onInputChanged(it)
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(focusRequester),

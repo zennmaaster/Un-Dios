@@ -43,6 +43,9 @@ dependencies {
     // Project modules
     implementation(project(":core:common"))
 
+    // Core Android (for Drawable.toBitmap() extension)
+    implementation(libs.androidx.core.ktx)
+
     // Compose
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

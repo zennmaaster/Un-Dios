@@ -38,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -55,12 +56,16 @@ import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.castor.app.launcher.AppDrawer
+import com.castor.app.launcher.DockManager
 import com.castor.app.launcher.GestureHandler
+import com.castor.app.launcher.WidgetArea
+import com.castor.app.launcher.WidgetManager
 import com.castor.app.lockscreen.LockScreenOverlay
 import com.castor.app.lockscreen.LockScreenViewModel
 import com.castor.core.data.repository.ReminderRepository
 import com.castor.core.security.BiometricAuthManager
 import com.castor.core.ui.components.AgentCard
+import com.castor.core.ui.components.DockPinnedApp
 import com.castor.core.ui.components.QuickLaunchBar
 import com.castor.core.ui.components.SystemStatusBar
 import com.castor.app.system.SystemStatsViewModel
@@ -123,6 +128,7 @@ fun HomeScreen(
     onNavigateToNotificationCenter: () -> Unit = {},
     onNavigateToNotes: () -> Unit = {},
     onNavigateToWeather: () -> Unit = {},
+    onNavigateToRoute: (String) -> Unit = {},
     viewModel: CommandBarViewModel = hiltViewModel(),
     systemStatsViewModel: SystemStatsViewModel = hiltViewModel(),
     lockScreenViewModel: LockScreenViewModel = hiltViewModel(),
@@ -136,6 +142,9 @@ fun HomeScreen(
 
     // Universal search overlay visibility state
     var isSearchVisible by rememberSaveable { mutableStateOf(false) }
+
+    // Search query from command bar /search command
+    var searchQuery by rememberSaveable { mutableStateOf("") }
 
     // Quick-add reminder bottom sheet visibility state
     var isQuickAddReminderVisible by rememberSaveable { mutableStateOf(false) }
@@ -173,6 +182,28 @@ fun HomeScreen(
     val activity = context as? FragmentActivity
     val canUseBiometric = activity?.let { biometricAuthManager.canAuthenticate(it) } ?: false
 
+    // Dock and Widget managers (from Hilt singleton scope)
+    val homeEntryPoint = androidx.compose.runtime.remember(context) {
+        dagger.hilt.android.EntryPointAccessors.fromApplication(
+            context.applicationContext,
+            HomeScreenEntryPoint::class.java
+        )
+    }
+    val dockManager = androidx.compose.runtime.remember { homeEntryPoint.dockManager() }
+    val widgetManager = androidx.compose.runtime.remember { homeEntryPoint.widgetManager() }
+
+    // Pinned apps for the customizable dock
+    val pinnedApps by dockManager.pinnedApps.collectAsState()
+    val dockPinnedApps = androidx.compose.runtime.remember(pinnedApps) {
+        pinnedApps.map { pinned ->
+            DockPinnedApp(
+                packageName = pinned.packageName,
+                label = pinned.label,
+                icon = pinned.icon
+            )
+        }
+    }
+
     // Live data from BriefingViewModel for agent cards
     val nowPlaying = quickStatus.nowPlaying ?: "Nothing playing"
     val nextReminder = if (upcomingReminders.isNotEmpty()) {
@@ -180,6 +211,41 @@ fun HomeScreen(
         "${briefingViewModel.formatReminderTime(first.triggerTimeMs)} ${first.description}"
     } else {
         "No upcoming tasks"
+    }
+
+    // ========================================================================
+    // Collect navigation events from the CommandBar ViewModel.
+    // When the user types a built-in shortcut like /messages, the ViewModel
+    // emits the route string here and we dispatch to the correct callback.
+    // ========================================================================
+    LaunchedEffect(Unit) {
+        viewModel.navigationEvent.collect { route ->
+            when {
+                // Search command: route format is "search:<query>"
+                route.startsWith("search:") -> {
+                    searchQuery = route.removePrefix("search:")
+                    isSearchVisible = true
+                }
+                // Standard navigation routes -- map to existing callbacks
+                route == "messages" -> onNavigateToMessages()
+                route == "media" -> onNavigateToMedia()
+                route == "reminders" -> onNavigateToReminders()
+                route == "notes" -> onNavigateToNotes()
+                route == "weather" -> onNavigateToWeather()
+                route == "contacts" -> onNavigateToContacts()
+                route == "notification_center" -> onNavigateToNotificationCenter()
+                route == "usage_stats" -> onNavigateToUsageStats()
+                route == "settings" -> onNavigateToSettings()
+                route == "recommendations" -> onNavigateToRecommendations()
+                // Routes without dedicated callbacks -- use generic route navigation
+                route == "model_manager" -> onNavigateToRoute(route)
+                route == "about" -> onNavigateToRoute(route)
+                route == "battery_optimization" -> onNavigateToRoute(route)
+                route == "theme_selector" -> onNavigateToRoute(route)
+                // Fallback for any other route
+                else -> onNavigateToRoute(route)
+            }
+        }
     }
 
     // The entire home screen is layered: home content underneath, app drawer overlay on top,
@@ -234,6 +300,15 @@ fun HomeScreen(
                                 state = commandBarState,
                                 onSubmit = viewModel::onSubmit,
                                 onToggleExpanded = viewModel::toggleExpanded,
+                                onInputChanged = viewModel::onInputChanged,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        // ---- Widget area: spans full width, between command bar and content ----
+                        item(span = { GridItemSpan(2) }) {
+                            WidgetArea(
+                                widgetManager = widgetManager,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -441,7 +516,23 @@ fun HomeScreen(
                     onAppDrawer = { isAppDrawerVisible = true },
                     onTerminal = { viewModel.toggleExpanded() },
                     onSearch = { isSearchVisible = true },
-                    unreadMessages = unreadMessages
+                    unreadMessages = unreadMessages,
+                    pinnedApps = dockPinnedApps,
+                    onPinnedAppClick = { packageName ->
+                        // Launch the pinned app
+                        val launchIntent = context.packageManager.getLaunchIntentForPackage(packageName)
+                        launchIntent?.let {
+                            it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            try { context.startActivity(it) } catch (_: Exception) { }
+                        }
+                    },
+                    onPinnedAppRemove = { packageName ->
+                        dockManager.unpinApp(packageName)
+                    },
+                    onAddPinnedApp = {
+                        // Open app drawer so user can long-press to pin
+                        isAppDrawerVisible = true
+                    }
                 )
             }
         }
@@ -495,7 +586,11 @@ fun HomeScreen(
         // ====================================================================
         UniversalSearchOverlay(
             isVisible = isSearchVisible,
-            onDismiss = { isSearchVisible = false },
+            onDismiss = {
+                isSearchVisible = false
+                searchQuery = "" // Reset query when dismissed
+            },
+            initialQuery = searchQuery,
             onNavigate = { route ->
                 when (route) {
                     "messages" -> onNavigateToMessages()
@@ -708,4 +803,19 @@ private fun LastSyncedFooter(lastUpdatedMs: Long?) {
 interface QuickAddReminderEntryPoint {
     fun reminderRepository(): ReminderRepository
     fun reminderScheduler(): ReminderScheduler
+}
+
+/**
+ * Hilt [EntryPoint] providing [DockManager] and [WidgetManager]
+ * to the [HomeScreen] composable from the application-scoped component.
+ *
+ * These singletons manage dock pinning and widget hosting respectively.
+ * We use an entry point so the composable can access them without a ViewModel
+ * intermediary, since they are already application-scoped singletons.
+ */
+@dagger.hilt.EntryPoint
+@dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+interface HomeScreenEntryPoint {
+    fun dockManager(): DockManager
+    fun widgetManager(): WidgetManager
 }

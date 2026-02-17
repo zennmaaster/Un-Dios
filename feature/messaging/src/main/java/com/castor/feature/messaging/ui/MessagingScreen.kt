@@ -1,19 +1,11 @@
 package com.castor.feature.messaging.ui
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -33,9 +25,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Archive
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.MarkEmailRead
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Reply
@@ -57,6 +46,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
@@ -82,7 +72,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.castor.core.common.model.MessageSource
 import com.castor.core.common.util.DateUtils
 import com.castor.core.ui.components.SourceBadge
-import kotlinx.coroutines.launch
+import com.castor.core.ui.theme.TerminalColors
 
 /**
  * Primary messaging screen with Ubuntu/terminal-style power-user aesthetics.
@@ -90,6 +80,14 @@ import kotlinx.coroutines.launch
  * Layout modes:
  * - Compact (< 600dp): single-column conversation list; tapping navigates to thread
  * - Expanded (>= 600dp): split-pane with conversation list on left, thread on right
+ *
+ * Features:
+ * - Unread count badge per conversation
+ * - "$ mark --all --read" action to mark all conversations as read
+ * - Source filter chips (All, WhatsApp, Teams)
+ * - Search/grep across conversations
+ * - Long-press context menu with pin, mark-read, archive
+ * - Swipe actions for quick reply/archive
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -126,7 +124,7 @@ fun MessagingScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .background(MaterialTheme.colorScheme.surface)
+                .background(TerminalColors.Background)
         ) {
             // Filter bar
             FilterBar(
@@ -158,7 +156,7 @@ fun MessagingScreen(
 
                     VerticalDivider(
                         modifier = Modifier.fillMaxHeight(),
-                        color = MaterialTheme.colorScheme.outlineVariant
+                        color = TerminalColors.Surface
                     )
 
                     // Right pane: embedded conversation thread
@@ -189,13 +187,15 @@ fun MessagingScreen(
                                     style = MaterialTheme.typography.titleMedium.copy(
                                         fontFamily = FontFamily.Monospace
                                     ),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = TerminalColors.Subtext
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
                                     text = "Choose a conversation from the list to view messages",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontFamily = FontFamily.Monospace
+                                    ),
+                                    color = TerminalColors.Subtext.copy(alpha = 0.7f)
                                 )
                             }
                         }
@@ -221,7 +221,7 @@ fun MessagingScreen(
     }
 }
 
-// ── Top Bar ──────────────────────────────────────────────────────────────────
+// -- Top Bar ----------------------------------------------------------------------
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -245,18 +245,21 @@ private fun MessagingTopBar(
                             "grep messages...",
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 fontFamily = FontFamily.Monospace
-                            )
+                            ),
+                            color = TerminalColors.Subtext.copy(alpha = 0.5f)
                         )
                     },
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(
-                        fontFamily = FontFamily.Monospace
+                        fontFamily = FontFamily.Monospace,
+                        color = TerminalColors.Command
                     ),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        focusedBorderColor = TerminalColors.Prompt,
                         unfocusedBorderColor = Color.Transparent,
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                        focusedContainerColor = TerminalColors.Surface.copy(alpha = 0.5f),
+                        unfocusedContainerColor = TerminalColors.Surface.copy(alpha = 0.3f),
+                        cursorColor = TerminalColors.Cursor
                     ),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp)
@@ -265,19 +268,23 @@ private fun MessagingTopBar(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = "Messages",
-                        style = MaterialTheme.typography.titleLarge
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontFamily = FontFamily.Monospace
+                        ),
+                        color = TerminalColors.Command
                     )
                     if (unreadCount > 0) {
                         Spacer(modifier = Modifier.width(8.dp))
                         Badge(
-                            containerColor = MaterialTheme.colorScheme.error
+                            containerColor = TerminalColors.BadgeRed
                         ) {
                             Text(
                                 text = if (unreadCount > 99) "99+" else unreadCount.toString(),
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = FontWeight.Bold
-                                )
+                                ),
+                                color = TerminalColors.Command
                             )
                         }
                     }
@@ -286,7 +293,11 @@ private fun MessagingTopBar(
         },
         navigationIcon = {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = TerminalColors.Command
+                )
             }
         },
         actions = {
@@ -294,26 +305,33 @@ private fun MessagingTopBar(
             IconButton(onClick = onToggleSearch) {
                 Icon(
                     if (showSearch) Icons.Default.SearchOff else Icons.Default.Search,
-                    contentDescription = if (showSearch) "Close search" else "Search [Ctrl+F]"
+                    contentDescription = if (showSearch) "Close search" else "Search [Ctrl+F]",
+                    tint = TerminalColors.Prompt
                 )
             }
-            // Mark all as read
+            // Mark all as read -- styled as terminal command
             if (unreadCount > 0) {
-                IconButton(onClick = onMarkAllRead) {
-                    Icon(
-                        Icons.Default.DoneAll,
-                        contentDescription = "Mark all read [Ctrl+Shift+R]"
+                TextButton(
+                    onClick = onMarkAllRead
+                ) {
+                    Text(
+                        text = "$ mark --all --read",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = TerminalColors.Prompt
                     )
                 }
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = TerminalColors.Background
         )
     )
 }
 
-// ── Filter Bar ───────────────────────────────────────────────────────────────
+// -- Filter Bar -------------------------------------------------------------------
 
 @Composable
 private fun FilterBar(
@@ -333,12 +351,15 @@ private fun FilterBar(
                         "All",
                         style = MaterialTheme.typography.labelMedium.copy(
                             fontFamily = FontFamily.Monospace
-                        )
+                        ),
+                        color = if (selectedFilter == null) TerminalColors.Background
+                        else TerminalColors.Command
                     )
                 },
                 colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    selectedContainerColor = TerminalColors.Accent,
+                    selectedLabelColor = TerminalColors.Background,
+                    containerColor = TerminalColors.Surface
                 )
             )
         }
@@ -353,19 +374,22 @@ private fun FilterBar(
                         source.name.lowercase().replaceFirstChar { it.uppercase() },
                         style = MaterialTheme.typography.labelMedium.copy(
                             fontFamily = FontFamily.Monospace
-                        )
+                        ),
+                        color = if (selectedFilter == source) TerminalColors.Background
+                        else TerminalColors.Command
                     )
                 },
                 colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    selectedContainerColor = TerminalColors.Accent,
+                    selectedLabelColor = TerminalColors.Background,
+                    containerColor = TerminalColors.Surface
                 )
             )
         }
     }
 }
 
-// ── Conversation List Pane ───────────────────────────────────────────────────
+// -- Conversation List Pane -------------------------------------------------------
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -398,7 +422,7 @@ private fun ConversationListPane(
     }
 }
 
-// ── Conversation List Item (with long-press context menu + swipe) ────────────
+// -- Conversation List Item (with long-press context menu + swipe) ----------------
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -436,8 +460,8 @@ private fun ConversationListItem(
             val direction = dismissState.dismissDirection
             val backgroundColor by animateColorAsState(
                 when (direction) {
-                    SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.primaryContainer
-                    SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.tertiaryContainer
+                    SwipeToDismissBoxValue.StartToEnd -> TerminalColors.Accent.copy(alpha = 0.3f)
+                    SwipeToDismissBoxValue.EndToStart -> TerminalColors.Info.copy(alpha = 0.3f)
                     else -> Color.Transparent
                 },
                 label = "swipe_bg"
@@ -463,7 +487,7 @@ private fun ConversationListItem(
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurface
+                        tint = TerminalColors.Command
                     )
                 }
             }
@@ -472,12 +496,12 @@ private fun ConversationListItem(
         enableDismissFromEndToStart = true
     ) {
         val selectedBg = if (isSelected) {
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+            TerminalColors.Accent.copy(alpha = 0.15f)
         } else {
-            MaterialTheme.colorScheme.surface
+            TerminalColors.Background
         }
         val unreadBg = if (conversation.unreadCount > 0 && !isSelected) {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            TerminalColors.Surface.copy(alpha = 0.4f)
         } else {
             selectedBg
         }
@@ -502,7 +526,7 @@ private fun ConversationListItem(
                         modifier = Modifier
                             .size(36.dp)
                             .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primaryContainer),
+                            .background(TerminalColors.Accent.copy(alpha = 0.25f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -511,7 +535,7 @@ private fun ConversationListItem(
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold
                             ),
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = TerminalColors.Accent
                         )
                     }
 
@@ -524,7 +548,7 @@ private fun ConversationListItem(
                                     Icons.Default.PushPin,
                                     contentDescription = "Pinned",
                                     modifier = Modifier.size(12.dp),
-                                    tint = MaterialTheme.colorScheme.primary
+                                    tint = TerminalColors.Accent
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                             }
@@ -535,6 +559,11 @@ private fun ConversationListItem(
                                         FontWeight.Bold else FontWeight.Medium,
                                     fontFamily = FontFamily.Monospace
                                 ),
+                                color = if (conversation.unreadCount > 0) {
+                                    TerminalColors.Command
+                                } else {
+                                    TerminalColors.Output
+                                },
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f, fill = false)
@@ -549,7 +578,7 @@ private fun ConversationListItem(
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     fontFamily = FontFamily.Monospace
                                 ),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = TerminalColors.Info,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -566,14 +595,14 @@ private fun ConversationListItem(
                                 fontSize = 10.sp
                             ),
                             color = if (conversation.unreadCount > 0)
-                                MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant
+                                TerminalColors.Accent
+                            else TerminalColors.Timestamp
                         )
                         if (conversation.unreadCount > 0) {
                             Spacer(modifier = Modifier.height(2.dp))
                             Badge(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                                containerColor = TerminalColors.Accent,
+                                contentColor = TerminalColors.Background,
                                 modifier = Modifier.size(20.dp)
                             ) {
                                 Text(
@@ -581,7 +610,8 @@ private fun ConversationListItem(
                                     else conversation.unreadCount.toString(),
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontSize = 9.sp,
-                                        fontFamily = FontFamily.Monospace
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold
                                     )
                                 )
                             }
@@ -597,7 +627,7 @@ private fun ConversationListItem(
                         fontFamily = FontFamily.Monospace,
                         lineHeight = 16.sp
                     ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = TerminalColors.Subtext,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(start = 46.dp) // align with text after avatar
@@ -610,7 +640,7 @@ private fun ConversationListItem(
                         fontFamily = FontFamily.Monospace,
                         fontSize = 9.sp
                     ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    color = TerminalColors.Timestamp.copy(alpha = 0.5f),
                     modifier = Modifier.padding(start = 46.dp, top = 2.dp)
                 )
             }
@@ -626,10 +656,15 @@ private fun ConversationListItem(
                             Icon(
                                 Icons.Default.MarkEmailRead,
                                 contentDescription = null,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(18.dp),
+                                tint = TerminalColors.Prompt
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Mark as read", fontFamily = FontFamily.Monospace)
+                            Text(
+                                "$ mark --read",
+                                fontFamily = FontFamily.Monospace,
+                                color = TerminalColors.Command
+                            )
                         }
                     },
                     onClick = {
@@ -643,12 +678,14 @@ private fun ConversationListItem(
                             Icon(
                                 Icons.Default.PushPin,
                                 contentDescription = null,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(18.dp),
+                                tint = TerminalColors.Accent
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                if (conversation.isPinned) "Unpin" else "Pin",
-                                fontFamily = FontFamily.Monospace
+                                if (conversation.isPinned) "$ unpin" else "$ pin",
+                                fontFamily = FontFamily.Monospace,
+                                color = TerminalColors.Command
                             )
                         }
                     },
@@ -663,10 +700,15 @@ private fun ConversationListItem(
                             Icon(
                                 Icons.Default.Archive,
                                 contentDescription = null,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(18.dp),
+                                tint = TerminalColors.Info
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Archive", fontFamily = FontFamily.Monospace)
+                            Text(
+                                "$ archive",
+                                fontFamily = FontFamily.Monospace,
+                                color = TerminalColors.Command
+                            )
                         }
                     },
                     onClick = {
@@ -677,13 +719,13 @@ private fun ConversationListItem(
         }
 
         HorizontalDivider(
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+            color = TerminalColors.Surface.copy(alpha = 0.5f),
             thickness = 0.5.dp
         )
     }
 }
 
-// ── Empty State ──────────────────────────────────────────────────────────────
+// -- Empty State ------------------------------------------------------------------
 
 @Composable
 private fun EmptyState(searchQuery: String) {
@@ -701,7 +743,7 @@ private fun EmptyState(searchQuery: String) {
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontFamily = FontFamily.Monospace
                     ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = TerminalColors.Prompt
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
@@ -709,7 +751,7 @@ private fun EmptyState(searchQuery: String) {
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontFamily = FontFamily.Monospace
                     ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    color = TerminalColors.Subtext.copy(alpha = 0.6f)
                 )
             } else {
                 Text(
@@ -717,7 +759,7 @@ private fun EmptyState(searchQuery: String) {
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontFamily = FontFamily.Monospace
                     ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = TerminalColors.Prompt
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
@@ -725,13 +767,15 @@ private fun EmptyState(searchQuery: String) {
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontFamily = FontFamily.Monospace
                     ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    color = TerminalColors.Subtext.copy(alpha = 0.6f)
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "Enable Notification Access in Settings to start capturing messages.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontFamily = FontFamily.Monospace
+                    ),
+                    color = TerminalColors.Subtext.copy(alpha = 0.5f)
                 )
             }
         }

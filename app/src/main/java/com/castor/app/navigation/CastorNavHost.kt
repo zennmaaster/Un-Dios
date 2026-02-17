@@ -133,7 +133,8 @@ fun CastorNavHost(
                 onNavigateToSettings = { navController.navigate("settings") },
                 onNavigateToNotificationCenter = { navController.navigate("notification_center") },
                 onNavigateToNotes = { navController.navigate("notes") },
-                onNavigateToWeather = { navController.navigate("weather") }
+                onNavigateToWeather = { navController.navigate("weather") },
+                onNavigateToRoute = { route -> navController.navigate(route) }
             )
         }
 

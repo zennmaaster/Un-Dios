@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Minimize
@@ -27,9 +28,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,13 +47,15 @@ import com.castor.core.ui.theme.TerminalColors
  * Window chrome / frame for a desktop window.
  *
  * Renders Ubuntu-style window decorations with a terminal aesthetic:
- * - Title bar with app icon, window title (monospace), and window controls
+ * - Title bar with app icon, window title (monospace), content type label, and window controls
  * - Window controls: minimize (yellow), maximize/restore (green), close (red)
  *   styled as small colored circles (similar to macOS/Ubuntu close/minimize/maximize)
  * - Draggable title bar for repositioning
  * - Double-click title bar to toggle maximize
  * - Shadow and rounded corners for the overall window frame
  * - Active/inactive visual states (brighter title bar when focused)
+ * - Resize handle in the bottom-right corner for manual resizing
+ * - Content type label in the title bar (e.g., "Messages", "Media Player")
  *
  * The window body (content) is rendered below the title bar inside
  * a clipped container.
@@ -65,6 +66,7 @@ import com.castor.core.ui.theme.TerminalColors
  * @param onToggleMaximize Called when maximize is toggled (button or double-click title bar)
  * @param onFocus Called when the window is clicked anywhere (bring to front)
  * @param onDrag Called with delta position during title bar drag
+ * @param onResize Called with delta size during resize handle drag (optional)
  * @param modifier Modifier for the outer frame container
  */
 @Composable
@@ -75,6 +77,7 @@ fun WindowFrame(
     onToggleMaximize: () -> Unit,
     onFocus: () -> Unit,
     onDrag: (deltaX: Float, deltaY: Float) -> Unit,
+    onResize: ((deltaX: Float, deltaY: Float) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val isActive = window.isActive
@@ -92,14 +95,21 @@ fun WindowFrame(
         label = "borderColor"
     )
 
-    val shadowElevation = if (isActive) 8.dp else 2.dp
+    val shadowElevation = if (isActive) 12.dp else 4.dp
+
+    // Derive a human-readable content type from the window ID/title
+    val contentType = remember(window.id) {
+        getWindowContentType(window.id)
+    }
 
     Column(
         modifier = modifier
             .shadow(
                 elevation = shadowElevation,
                 shape = RoundedCornerShape(8.dp),
-                ambientColor = if (isActive) TerminalColors.Accent.copy(alpha = 0.1f)
+                ambientColor = if (isActive) TerminalColors.Accent.copy(alpha = 0.15f)
+                else Color.Black.copy(alpha = 0.3f),
+                spotColor = if (isActive) TerminalColors.Accent.copy(alpha = 0.1f)
                 else Color.Black.copy(alpha = 0.2f)
             )
             .clip(RoundedCornerShape(8.dp))
@@ -209,6 +219,39 @@ fun WindowFrame(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
+
+            // Content type label in the title bar
+            if (contentType.isNotEmpty()) {
+                Text(
+                    text = "[$contentType]",
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 9.sp,
+                        color = if (isActive) TerminalColors.Timestamp else TerminalColors.Subtext
+                    )
+                )
+
+                Spacer(modifier = Modifier.width(6.dp))
+            }
+
+            // Window state indicator
+            Text(
+                text = when (window.state) {
+                    WindowState.Maximized -> "[max]"
+                    WindowState.TiledLeft -> "[L]"
+                    WindowState.TiledRight -> "[R]"
+                    WindowState.TiledTopLeft -> "[TL]"
+                    WindowState.TiledTopRight -> "[TR]"
+                    WindowState.TiledBottomLeft -> "[BL]"
+                    WindowState.TiledBottomRight -> "[BR]"
+                    else -> ""
+                },
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 8.sp,
+                    color = TerminalColors.Timestamp
+                )
+            )
         }
 
         // ====================================================================
@@ -220,8 +263,50 @@ fun WindowFrame(
                 .background(TerminalColors.Background)
         ) {
             window.content()
+
+            // ---- Resize handle in bottom-right corner ----
+            if (window.state == WindowState.Normal && onResize != null) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .size(16.dp)
+                        .pointerInput(Unit) {
+                            detectDragGestures { change, dragAmount ->
+                                change.consume()
+                                onResize(dragAmount.x, dragAmount.y)
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Terminal-style resize grip (diagonal lines in bottom-right)
+                    Icon(
+                        imageVector = Icons.Default.DragHandle,
+                        contentDescription = "Resize",
+                        tint = TerminalColors.Subtext.copy(alpha = 0.5f),
+                        modifier = Modifier.size(10.dp)
+                    )
+                }
+            }
         }
     }
+}
+
+/**
+ * Maps a window ID to a human-readable content type label.
+ *
+ * @param windowId The window's unique identifier
+ * @return A short content type string (e.g., "Messages", "Terminal")
+ */
+private fun getWindowContentType(windowId: String): String = when (windowId) {
+    "terminal" -> "Terminal"
+    "messages" -> "Messages"
+    "media" -> "Media Player"
+    "reminders" -> "Reminders"
+    "ai-engine" -> "AI Engine"
+    "files" -> "File Manager"
+    "notes" -> "Notes"
+    "settings" -> "Settings"
+    else -> windowId.replaceFirstChar { it.uppercase() }
 }
 
 /**

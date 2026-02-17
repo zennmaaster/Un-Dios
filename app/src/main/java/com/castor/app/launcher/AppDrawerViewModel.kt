@@ -104,7 +104,8 @@ data class SearchResult(
  */
 @HiltViewModel
 class AppDrawerViewModel @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val dockManager: DockManager
 ) : ViewModel() {
 
     // =========================================================================
@@ -395,6 +396,27 @@ class AppDrawerViewModel @Inject constructor(
      */
     fun selectCategory(category: AppCategory?) {
         selectedCategory.value = category
+    }
+
+    /**
+     * Returns whether the given app is currently pinned to the dock.
+     */
+    fun isAppPinned(packageName: String): Boolean {
+        return dockManager.isPinned(packageName)
+    }
+
+    /**
+     * Pins the given app to the dock. Delegates to [DockManager.pinApp].
+     */
+    fun pinAppToDock(packageName: String) {
+        dockManager.pinApp(packageName)
+    }
+
+    /**
+     * Unpins the given app from the dock. Delegates to [DockManager.unpinApp].
+     */
+    fun unpinAppFromDock(packageName: String) {
+        dockManager.unpinApp(packageName)
     }
 
     // =========================================================================

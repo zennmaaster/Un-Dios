@@ -46,6 +46,7 @@ dependencies {
     implementation(project(":core:common"))
     implementation(project(":core:ui"))
     implementation(project(":core:data"))
+    implementation(project(":core:inference"))
 
     // Compose
     implementation(platform(libs.compose.bom))

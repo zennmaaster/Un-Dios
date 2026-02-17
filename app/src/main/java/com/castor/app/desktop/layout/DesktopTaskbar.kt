@@ -1,7 +1,9 @@
 package com.castor.app.desktop.layout
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -17,7 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.Bluetooth
-import androidx.compose.material.icons.filled.Circle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Monitor
@@ -25,9 +27,13 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,17 +48,23 @@ import com.castor.app.desktop.window.DesktopWindow
 import com.castor.app.desktop.window.WindowState
 import com.castor.core.ui.components.SystemStats
 import com.castor.core.ui.theme.TerminalColors
+import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
- * Desktop mode bottom taskbar — analogous to the GNOME bottom panel or Windows taskbar.
+ * Desktop mode bottom taskbar -- analogous to the GNOME bottom panel or Windows taskbar.
  *
  * Layout (left to right):
  * 1. **Activities button**: Opens the GNOME-style overview of all windows
- * 2. **Running window tabs**: Each open window shown as a clickable tab
- * 3. **Spacer**
- * 4. **System tray**: WiFi, Bluetooth, Volume, Battery indicators
- * 5. **Notification badge**: Count of unread notifications
- * 6. **Clock**: Current time in monospace font
+ * 2. **Workspace indicator**: Shows count of open windows `[N windows]`
+ * 3. **Separator**
+ * 4. **Running window tabs**: Each open window with icon, title, and close on long-press
+ * 5. **Spacer**
+ * 6. **System tray**: WiFi, Bluetooth, Volume, Battery indicators
+ * 7. **Notification badge**: Count of unread notifications
+ * 8. **Clock**: Real time updating every minute in monospace font
  *
  * The taskbar uses the same dark overlay background as the dock and status bar,
  * maintaining the terminal aesthetic throughout the desktop environment.
@@ -62,6 +74,7 @@ import com.castor.core.ui.theme.TerminalColors
  * @param systemStats System statistics for the tray indicators
  * @param onActivitiesClick Open the Activities/overview screen
  * @param onWindowClick Focus the clicked window
+ * @param onWindowClose Close a specific window by ID
  * @param onSystemTrayClick Open the system tray panel
  * @param onNotificationClick Open the notification shade
  * @param onClipboardClick Open the clipboard history panel
@@ -74,11 +87,21 @@ fun DesktopTaskbar(
     systemStats: SystemStats,
     onActivitiesClick: () -> Unit,
     onWindowClick: (String) -> Unit,
+    onWindowClose: (String) -> Unit = {},
     onSystemTrayClick: () -> Unit = {},
     onNotificationClick: () -> Unit = {},
     onClipboardClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    // ---- Live clock updating every minute ----
+    var currentTime by remember { mutableStateOf(formatTaskbarTime()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            currentTime = formatTaskbarTime()
+            delay(60_000L)
+        }
+    }
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -87,7 +110,7 @@ fun DesktopTaskbar(
             .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // ---- Activities button ----
+        // ---- Activities / App Menu button ----
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(4.dp))
@@ -115,6 +138,25 @@ fun DesktopTaskbar(
             }
         }
 
+        Spacer(modifier = Modifier.width(6.dp))
+
+        // ---- Workspace indicator ----
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(4.dp))
+                .background(TerminalColors.Surface.copy(alpha = 0.3f))
+                .padding(horizontal = 6.dp, vertical = 3.dp)
+        ) {
+            Text(
+                text = "[${windows.size} window${if (windows.size != 1) "s" else ""}]",
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 9.sp,
+                    color = TerminalColors.Timestamp
+                )
+            )
+        }
+
         Spacer(modifier = Modifier.width(8.dp))
 
         // ---- Separator ----
@@ -137,7 +179,8 @@ fun DesktopTaskbar(
                 TaskbarWindowTab(
                     window = window,
                     isActive = window.id == activeWindowId,
-                    onClick = { onWindowClick(window.id) }
+                    onClick = { onWindowClick(window.id) },
+                    onCloseRequest = { onWindowClose(window.id) }
                 )
             }
         }
@@ -267,9 +310,9 @@ fun DesktopTaskbar(
                     .background(TerminalColors.Surface)
             )
 
-            // Clock
+            // Clock -- real time updating every minute
             Text(
-                text = systemStats.currentTime,
+                text = currentTime,
                 style = TextStyle(
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
@@ -283,14 +326,23 @@ fun DesktopTaskbar(
 
 /**
  * A single window tab in the taskbar showing the window's icon, title,
- * and active/minimized state.
+ * active/minimized state, and a close button on long-press.
+ *
+ * @param window The desktop window this tab represents
+ * @param isActive Whether this window is currently focused
+ * @param onClick Callback when the tab is tapped (focus window)
+ * @param onCloseRequest Callback when the tab is long-pressed (close window)
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TaskbarWindowTab(
     window: DesktopWindow,
     isActive: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onCloseRequest: () -> Unit
 ) {
+    var showClose by remember { mutableStateOf(false) }
+
     val backgroundColor = when {
         isActive -> TerminalColors.Surface
         window.state == WindowState.Minimized -> TerminalColors.Overlay
@@ -308,16 +360,23 @@ private fun TaskbarWindowTab(
         modifier = Modifier
             .clip(RoundedCornerShape(4.dp))
             .background(backgroundColor)
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = { showClose = !showClose }
+            )
             .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
+        // Window icon
         Icon(
             imageVector = window.icon,
             contentDescription = null,
             tint = if (isActive) TerminalColors.Accent else TerminalColors.Timestamp,
             modifier = Modifier.size(12.dp)
         )
+
         Spacer(modifier = Modifier.width(4.dp))
+
+        // Window title (content type label)
         Text(
             text = window.title,
             style = TextStyle(
@@ -340,6 +399,55 @@ private fun TaskbarWindowTab(
                     .background(TerminalColors.Accent)
             )
         }
+
+        // Minimized indicator
+        if (window.state == WindowState.Minimized) {
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = "(min)",
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 8.sp,
+                    color = TerminalColors.Timestamp
+                )
+            )
+        }
+
+        // Close button shown on long-press
+        if (showClose) {
+            Spacer(modifier = Modifier.width(4.dp))
+            Box(
+                modifier = Modifier
+                    .size(14.dp)
+                    .clip(CircleShape)
+                    .background(TerminalColors.Error.copy(alpha = 0.3f))
+                    .clickable(onClick = {
+                        showClose = false
+                        onCloseRequest()
+                    }),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Close window",
+                    tint = TerminalColors.Error,
+                    modifier = Modifier.size(8.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Formats the current time for the taskbar clock.
+ * Format: "EEE MMM d  HH:mm" matching Ubuntu GNOME style.
+ */
+private fun formatTaskbarTime(): String {
+    return try {
+        val formatter = SimpleDateFormat("EEE MMM d  HH:mm", Locale.getDefault())
+        formatter.format(Date())
+    } catch (_: Exception) {
+        ""
     }
 }
 

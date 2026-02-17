@@ -164,6 +164,14 @@ fun AppDrawer(
             },
             onAppLongClickInfo = { viewModel.openAppInfo(it) },
             onAppLongClickUninstall = { viewModel.uninstallApp(it) },
+            onAppDockPin = { appInfo ->
+                if (viewModel.isAppPinned(appInfo.packageName)) {
+                    viewModel.unpinAppFromDock(appInfo.packageName)
+                } else {
+                    viewModel.pinAppToDock(appInfo.packageName)
+                }
+            },
+            isAppPinned = { viewModel.isAppPinned(it.packageName) },
             onBack = onDismiss,
             isLoading = isLoading
         )
@@ -189,6 +197,8 @@ private fun AppDrawerContent(
     onAppClick: (AppInfo) -> Unit,
     onAppLongClickInfo: (AppInfo) -> Unit,
     onAppLongClickUninstall: (AppInfo) -> Unit,
+    onAppDockPin: (AppInfo) -> Unit,
+    isAppPinned: (AppInfo) -> Boolean,
     onBack: () -> Unit,
     isLoading: Boolean
 ) {
@@ -319,7 +329,9 @@ private fun AppDrawerContent(
                                 recentApps = recentApps,
                                 onAppClick = onAppClick,
                                 onAppLongClickInfo = onAppLongClickInfo,
-                                onAppLongClickUninstall = onAppLongClickUninstall
+                                onAppLongClickUninstall = onAppLongClickUninstall,
+                                onAppDockPin = onAppDockPin,
+                                isAppPinned = isAppPinned
                             )
                         }
 
@@ -343,6 +355,8 @@ private fun AppDrawerContent(
                                 onClick = { onAppClick(app) },
                                 onInfoClick = { onAppLongClickInfo(app) },
                                 onUninstallClick = { onAppLongClickUninstall(app) },
+                                onDockPin = { onAppDockPin(app) },
+                                isPinned = isAppPinned(app),
                                 showCategoryBadge = true
                             )
                         }
@@ -368,7 +382,9 @@ private fun AppDrawerContent(
                                 searchResult = result,
                                 onClick = { onAppClick(result.appInfo) },
                                 onInfoClick = { onAppLongClickInfo(result.appInfo) },
-                                onUninstallClick = { onAppLongClickUninstall(result.appInfo) }
+                                onUninstallClick = { onAppLongClickUninstall(result.appInfo) },
+                                onDockPin = { onAppDockPin(result.appInfo) },
+                                isPinned = isAppPinned(result.appInfo)
                             )
                         }
                     } else if (selectedCategory != null) {
@@ -388,6 +404,8 @@ private fun AppDrawerContent(
                                 onClick = { onAppClick(app) },
                                 onInfoClick = { onAppLongClickInfo(app) },
                                 onUninstallClick = { onAppLongClickUninstall(app) },
+                                onDockPin = { onAppDockPin(app) },
+                                isPinned = isAppPinned(app),
                                 showCategoryBadge = false
                             )
                         }
@@ -411,6 +429,8 @@ private fun AppDrawerContent(
                                         onClick = { onAppClick(app) },
                                         onInfoClick = { onAppLongClickInfo(app) },
                                         onUninstallClick = { onAppLongClickUninstall(app) },
+                                        onDockPin = { onAppDockPin(app) },
+                                        isPinned = isAppPinned(app),
                                         showCategoryBadge = true
                                     )
                                 }
@@ -670,7 +690,9 @@ private fun RecentAppsRow(
     recentApps: List<AppInfo>,
     onAppClick: (AppInfo) -> Unit,
     onAppLongClickInfo: (AppInfo) -> Unit,
-    onAppLongClickUninstall: (AppInfo) -> Unit
+    onAppLongClickUninstall: (AppInfo) -> Unit,
+    onAppDockPin: (AppInfo) -> Unit,
+    isAppPinned: (AppInfo) -> Boolean
 ) {
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -685,7 +707,9 @@ private fun RecentAppsRow(
                 appInfo = app,
                 onClick = { onAppClick(app) },
                 onInfoClick = { onAppLongClickInfo(app) },
-                onUninstallClick = { onAppLongClickUninstall(app) }
+                onUninstallClick = { onAppLongClickUninstall(app) },
+                onDockPin = { onAppDockPin(app) },
+                isPinned = isAppPinned(app)
             )
         }
     }
@@ -701,7 +725,9 @@ private fun RecentAppItem(
     appInfo: AppInfo,
     onClick: () -> Unit,
     onInfoClick: () -> Unit,
-    onUninstallClick: () -> Unit
+    onUninstallClick: () -> Unit,
+    onDockPin: () -> Unit,
+    isPinned: Boolean
 ) {
     var showContextMenu by remember { mutableStateOf(false) }
 
@@ -770,7 +796,12 @@ private fun RecentAppItem(
             onUninstallClick = {
                 showContextMenu = false
                 onUninstallClick()
-            }
+            },
+            onDockPin = {
+                showContextMenu = false
+                onDockPin()
+            },
+            isPinned = isPinned
         )
     }
 }
@@ -834,6 +865,8 @@ private fun AppGridItem(
     onClick: () -> Unit,
     onInfoClick: () -> Unit,
     onUninstallClick: () -> Unit,
+    onDockPin: () -> Unit = {},
+    isPinned: Boolean = false,
     showCategoryBadge: Boolean = false
 ) {
     var showContextMenu by remember { mutableStateOf(false) }
@@ -889,7 +922,12 @@ private fun AppGridItem(
             onUninstallClick = {
                 showContextMenu = false
                 onUninstallClick()
-            }
+            },
+            onDockPin = {
+                showContextMenu = false
+                onDockPin()
+            },
+            isPinned = isPinned
         )
     }
 }
@@ -903,7 +941,9 @@ private fun AppGridItemWithHighlight(
     searchResult: SearchResult,
     onClick: () -> Unit,
     onInfoClick: () -> Unit,
-    onUninstallClick: () -> Unit
+    onUninstallClick: () -> Unit,
+    onDockPin: () -> Unit = {},
+    isPinned: Boolean = false
 ) {
     val appInfo = searchResult.appInfo
     var showContextMenu by remember { mutableStateOf(false) }
@@ -965,7 +1005,12 @@ private fun AppGridItemWithHighlight(
             onUninstallClick = {
                 showContextMenu = false
                 onUninstallClick()
-            }
+            },
+            onDockPin = {
+                showContextMenu = false
+                onDockPin()
+            },
+            isPinned = isPinned
         )
     }
 }
@@ -1114,7 +1159,9 @@ private fun AppContextMenu(
     onDismiss: () -> Unit,
     appInfo: AppInfo,
     onInfoClick: () -> Unit,
-    onUninstallClick: () -> Unit
+    onUninstallClick: () -> Unit,
+    onDockPin: () -> Unit = {},
+    isPinned: Boolean = false
 ) {
     DropdownMenu(
         expanded = expanded,
@@ -1147,18 +1194,16 @@ private fun AppContextMenu(
             )
         }
 
-        // Add to Dock
+        // Pin / Unpin from Dock
         DropdownMenuItem(
             text = {
                 ContextMenuItemContent(
                     icon = Icons.Default.PushPin,
-                    label = "$ pin-to-dock"
+                    label = if (isPinned) "$ unpin-from-dock" else "$ pin-to-dock",
+                    color = if (isPinned) TerminalColors.Warning else TerminalColors.Command
                 )
             },
-            onClick = {
-                onDismiss()
-                // TODO: Implement dock pinning in future phase
-            }
+            onClick = onDockPin
         )
     }
 }
