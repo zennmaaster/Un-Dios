@@ -16,13 +16,23 @@ import javax.inject.Singleton
  * @param isActionable True when the notification carries a RemoteInput that can be used to reply.
  * @param conversationId An opaque identifier built from sender + group that can be used to thread
  *   messages into conversations.
+ * @param groupKey The notification group key from the system for grouping related notifications.
+ * @param conversationTitle The conversation title for messaging-style notifications (e.g., group chat name).
+ * @param actionCount The number of actions available on the notification.
+ * @param hasReplyAction Whether this notification has a direct reply action with RemoteInput.
+ * @param thumbnailUri URI string of the notification's large icon / thumbnail, if present.
  */
 data class ParsedNotification(
     val sender: String,
     val content: String,
     val groupName: String?,
     val isActionable: Boolean,
-    val conversationId: String?
+    val conversationId: String?,
+    val groupKey: String? = null,
+    val conversationTitle: String? = null,
+    val actionCount: Int = 0,
+    val hasReplyAction: Boolean = false,
+    val thumbnailUri: String? = null
 )
 
 /**
@@ -98,10 +108,26 @@ class NotificationParser @Inject constructor() {
         // Check whether this notification has a reply action.
         val isActionable = hasReplyAction(notification)
 
-        return when (source) {
+        // Extract enriched metadata for grouping and digest features.
+        val groupKey = sbn.groupKey
+        val conversationTitle = extractConversationTitle(extras)
+        val actionCount = notification.actions?.size ?: 0
+        val replyAction = detectReplyAction(notification)
+        val thumbnailUri = extractThumbnailUri(notification)
+
+        val base = when (source) {
             MessageSource.WHATSAPP -> parseWhatsApp(title, text, isActionable, sbn)
             MessageSource.TEAMS -> parseTeams(title, text, isActionable, sbn)
-        }
+        } ?: return null
+
+        // Enrich the parsed result with the new metadata fields.
+        return base.copy(
+            groupKey = groupKey,
+            conversationTitle = conversationTitle,
+            actionCount = actionCount,
+            hasReplyAction = replyAction,
+            thumbnailUri = thumbnailUri
+        )
     }
 
     // -------------------------------------------------------------------------------------
@@ -293,6 +319,45 @@ class NotificationParser @Inject constructor() {
         return notification.actions?.any { action ->
             action.remoteInputs?.isNotEmpty() == true
         } == true
+    }
+
+    /**
+     * Detects whether any action on the notification carries a [android.app.RemoteInput],
+     * indicating a direct inline reply capability.
+     */
+    private fun detectReplyAction(notification: Notification): Boolean {
+        return notification.actions?.any { action ->
+            action.remoteInputs?.isNotEmpty() == true
+        } == true
+    }
+
+    /**
+     * Extracts the conversation title from notification extras.
+     *
+     * Messaging-style notifications (e.g., group chats) often carry
+     * [Notification.EXTRA_CONVERSATION_TITLE] to identify the conversation.
+     */
+    private fun extractConversationTitle(extras: Bundle): String? {
+        return extras.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)?.toString()
+            ?.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * Extracts a thumbnail URI from the notification's large icon.
+     *
+     * Returns the URI string if the large icon is a URI-based [Icon], or `null` otherwise.
+     * Falls back to checking the deprecated [Notification.EXTRA_LARGE_ICON] bitmap extra.
+     */
+    private fun extractThumbnailUri(notification: Notification): String? {
+        // Try the modern Icon API (API 23+). Icon.getUri() is available for URI-type icons.
+        notification.getLargeIcon()?.let { icon ->
+            try {
+                return icon.uri?.toString()
+            } catch (_: Exception) {
+                // Icon is not URI-based (bitmap, resource, etc.) -- fall through.
+            }
+        }
+        return null
     }
 
     /**

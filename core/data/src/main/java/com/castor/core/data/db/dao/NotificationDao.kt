@@ -110,4 +110,120 @@ interface NotificationDao {
         """
     )
     fun search(query: String, limit: Int = 50): Flow<List<NotificationEntity>>
+
+    // -------------------------------------------------------------------------------------
+    // Grouping & Digest queries
+    // -------------------------------------------------------------------------------------
+
+    /**
+     * Returns the latest notification per app package with a count of notifications
+     * in each group. Groups by packageName for app-level grouping.
+     *
+     * Each row is the most recent notification for that package, with a virtual
+     * groupCount column (not in entity -- use raw query via DAO wrapper).
+     */
+    @Query(
+        """
+        SELECT * FROM notifications
+        WHERE isDismissed = 0
+          AND id IN (
+              SELECT id FROM notifications AS n2
+              WHERE n2.isDismissed = 0
+              GROUP BY n2.packageName
+              HAVING n2.timestamp = MAX(n2.timestamp)
+          )
+        ORDER BY timestamp DESC
+        """
+    )
+    fun getGroupedNotifications(): Flow<List<NotificationEntity>>
+
+    /**
+     * Returns the count of non-dismissed notifications per package name.
+     */
+    @Query(
+        """
+        SELECT packageName, COUNT(*) AS count
+        FROM notifications
+        WHERE isDismissed = 0
+        GROUP BY packageName
+        ORDER BY count DESC
+        """
+    )
+    fun getGroupCountsByPackage(): Flow<List<PackageNotificationCount>>
+
+    /** Returns all non-dismissed notifications matching the given [groupKey]. */
+    @Query(
+        """
+        SELECT * FROM notifications
+        WHERE isDismissed = 0 AND groupKey = :groupKey
+        ORDER BY timestamp DESC
+        """
+    )
+    fun getNotificationsByGroup(groupKey: String): Flow<List<NotificationEntity>>
+
+    /** Returns all non-dismissed notifications for a given [packageName]. */
+    @Query(
+        """
+        SELECT * FROM notifications
+        WHERE isDismissed = 0 AND packageName = :packageName
+        ORDER BY timestamp DESC
+        """
+    )
+    fun getNotificationsByPackage(packageName: String): Flow<List<NotificationEntity>>
+
+    /** Returns non-dismissed notifications that have a direct reply action. */
+    @Query(
+        """
+        SELECT * FROM notifications
+        WHERE isDismissed = 0 AND hasReplyAction = 1
+        ORDER BY timestamp DESC
+        """
+    )
+    fun getReplyableNotifications(): Flow<List<NotificationEntity>>
+
+    /**
+     * Returns a per-app summary digest for the last 24 hours.
+     * Each row contains the package name, app name, count of notifications,
+     * and the latest content and timestamp.
+     */
+    @Query(
+        """
+        SELECT
+            packageName,
+            appName,
+            COUNT(*) AS count,
+            MAX(content) AS latestMessage,
+            MAX(timestamp) AS latestTimestamp
+        FROM notifications
+        WHERE isDismissed = 0
+          AND timestamp >= :since
+        GROUP BY packageName
+        ORDER BY count DESC
+        """
+    )
+    fun getNotificationDigest(since: Long): Flow<List<NotificationDigestRow>>
+
+    /** Soft-delete all read (but non-dismissed) notifications. */
+    @Query("UPDATE notifications SET isDismissed = 1 WHERE isDismissed = 0 AND isRead = 1")
+    suspend fun clearAllRead()
 }
+
+/**
+ * Projection for per-package notification counts used in grouped view.
+ */
+data class PackageNotificationCount(
+    val packageName: String,
+    val count: Int
+)
+
+/**
+ * Projection for the notification digest query.
+ * Maps to columns returned by [NotificationDao.getNotificationDigest].
+ */
+data class NotificationDigestRow(
+    val packageName: String,
+    val appName: String,
+    val count: Int,
+    val latestMessage: String?,
+    val latestTimestamp: Long
+)

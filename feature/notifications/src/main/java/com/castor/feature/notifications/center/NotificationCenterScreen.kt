@@ -122,12 +122,17 @@ fun NotificationCenterScreen(
     val filteredNotifications by viewModel.filteredNotifications.collectAsState()
     val pinnedNotifications by viewModel.pinnedNotifications.collectAsState()
     val groupedNotifications by viewModel.groupedNotifications.collectAsState()
+    val appGroupedNotifications by viewModel.appGroupedNotifications.collectAsState()
+    val digestEntries by viewModel.digestEntries.collectAsState()
+    val digestTotalCount by viewModel.digestTotalCount.collectAsState()
     val selectedFilter by viewModel.selectedFilter.collectAsState()
     val selectedKeys by viewModel.selectedKeys.collectAsState()
     val isSelectionMode by viewModel.isSelectionMode.collectAsState()
     val notificationCount by viewModel.notificationCount.collectAsState()
     val unreadCount by viewModel.unreadCount.collectAsState()
     val expandedId by viewModel.expandedNotificationId.collectAsState()
+    val currentViewMode by viewModel.viewMode.collectAsState()
+    val expandedGroups by viewModel.expandedGroups.collectAsState()
 
     // Bottom sheet state for long-press actions
     var actionSheetNotification by remember { mutableStateOf<NotificationEntry?>(null) }
@@ -155,16 +160,28 @@ fun NotificationCenterScreen(
                 notificationCount = notificationCount,
                 unreadCount = unreadCount,
                 onBack = onBack,
-                onClearAll = { viewModel.clearAll() }
+                onClearAll = { viewModel.clearAll() },
+                onClearAllRead = { viewModel.clearAllRead() }
+            )
+
+            // ==================================================================
+            // View mode toggle: [flat] [grouped] [digest]
+            // ==================================================================
+            ViewModeTabRow(
+                selectedMode = currentViewMode,
+                onModeSelected = { viewModel.setViewMode(it) }
             )
 
             // ==================================================================
             // Filter tabs: --filter=all | --filter=social | ...
+            // (only shown in FLAT and GROUPED modes)
             // ==================================================================
-            FilterTabRow(
-                selectedFilter = selectedFilter,
-                onFilterSelected = { viewModel.setFilter(it) }
-            )
+            if (currentViewMode != ViewMode.DIGEST) {
+                FilterTabRow(
+                    selectedFilter = selectedFilter,
+                    onFilterSelected = { viewModel.setFilter(it) }
+                )
+            }
 
             HorizontalDivider(
                 color = TerminalColors.Surface,
@@ -172,110 +189,199 @@ fun NotificationCenterScreen(
             )
 
             // ==================================================================
-            // Notification list or empty state
+            // Content area based on view mode
             // ==================================================================
-            if (filteredNotifications.isEmpty()) {
-                EmptyState(selectedFilter = selectedFilter)
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    contentPadding = PaddingValues(
-                        start = 12.dp,
-                        end = 12.dp,
-                        top = 8.dp,
-                        bottom = if (isSelectionMode) 80.dp else 16.dp
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    // ---- Pinned section ----
-                    if (pinnedNotifications.isNotEmpty()) {
-                        item(key = "pinned_header") {
-                            SectionHeader(
-                                label = "-- pinned --",
-                                color = TerminalColors.Accent,
-                                count = pinnedNotifications.size
-                            )
-                        }
+            when (currentViewMode) {
+                ViewMode.FLAT -> {
+                    // ---- FLAT mode: original time-grouped list ----
+                    if (filteredNotifications.isEmpty()) {
+                        EmptyState(selectedFilter = selectedFilter)
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            contentPadding = PaddingValues(
+                                start = 12.dp,
+                                end = 12.dp,
+                                top = 8.dp,
+                                bottom = if (isSelectionMode) 80.dp else 16.dp
+                            ),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            // ---- Pinned section ----
+                            if (pinnedNotifications.isNotEmpty()) {
+                                item(key = "pinned_header") {
+                                    SectionHeader(
+                                        label = "-- pinned --",
+                                        color = TerminalColors.Accent,
+                                        count = pinnedNotifications.size
+                                    )
+                                }
 
-                        items(
-                            items = pinnedNotifications,
-                            key = { "pinned_${it.id}" }
-                        ) { notification ->
-                            SwipeableNotificationCard(
-                                notification = notification,
-                                isSelected = notification.id in selectedKeys,
-                                isSelectionMode = isSelectionMode,
-                                isExpanded = expandedId == notification.id,
-                                appMetadata = viewModel.getAppMetadata(notification.packageName),
-                                onDismiss = { viewModel.dismissNotification(notification.id) },
-                                onSnooze = { snoozePickerNotification = notification },
-                                onClick = {
-                                    if (isSelectionMode) {
-                                        viewModel.toggleSelection(notification.id)
-                                    } else {
-                                        viewModel.markAsRead(notification.id)
-                                        viewModel.toggleExpanded(notification.id)
-                                    }
-                                },
-                                onLongPress = {
-                                    if (!isSelectionMode) {
-                                        actionSheetNotification = notification
-                                    } else {
-                                        viewModel.toggleSelection(notification.id)
-                                    }
-                                },
-                                modifier = Modifier.animateItem()
-                            )
-                        }
+                                items(
+                                    items = pinnedNotifications,
+                                    key = { "pinned_${it.id}" }
+                                ) { notification ->
+                                    SwipeableNotificationCard(
+                                        notification = notification,
+                                        isSelected = notification.id in selectedKeys,
+                                        isSelectionMode = isSelectionMode,
+                                        isExpanded = expandedId == notification.id,
+                                        appMetadata = viewModel.getAppMetadata(notification.packageName),
+                                        onDismiss = { viewModel.dismissNotification(notification.id) },
+                                        onSnooze = { snoozePickerNotification = notification },
+                                        onClick = {
+                                            if (isSelectionMode) {
+                                                viewModel.toggleSelection(notification.id)
+                                            } else {
+                                                viewModel.markAsRead(notification.id)
+                                                viewModel.toggleExpanded(notification.id)
+                                            }
+                                        },
+                                        onLongPress = {
+                                            if (!isSelectionMode) {
+                                                actionSheetNotification = notification
+                                            } else {
+                                                viewModel.toggleSelection(notification.id)
+                                            }
+                                        },
+                                        modifier = Modifier.animateItem()
+                                    )
+                                }
 
-                        item(key = "pinned_divider") {
-                            Spacer(modifier = Modifier.height(4.dp))
+                                item(key = "pinned_divider") {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                }
+                            }
+
+                            // ---- Time-grouped sections ----
+                            groupedNotifications.forEach { (timeGroup, notifications) ->
+                                item(key = "header_${timeGroup.name}") {
+                                    SectionHeader(
+                                        label = timeGroup.header,
+                                        color = TerminalColors.Timestamp,
+                                        count = notifications.size
+                                    )
+                                }
+
+                                items(
+                                    items = notifications,
+                                    key = { it.id }
+                                ) { notification ->
+                                    SwipeableNotificationCard(
+                                        notification = notification,
+                                        isSelected = notification.id in selectedKeys,
+                                        isSelectionMode = isSelectionMode,
+                                        isExpanded = expandedId == notification.id,
+                                        appMetadata = viewModel.getAppMetadata(notification.packageName),
+                                        onDismiss = { viewModel.dismissNotification(notification.id) },
+                                        onSnooze = { snoozePickerNotification = notification },
+                                        onClick = {
+                                            if (isSelectionMode) {
+                                                viewModel.toggleSelection(notification.id)
+                                            } else {
+                                                viewModel.markAsRead(notification.id)
+                                                viewModel.toggleExpanded(notification.id)
+                                            }
+                                        },
+                                        onLongPress = {
+                                            if (!isSelectionMode) {
+                                                actionSheetNotification = notification
+                                            } else {
+                                                viewModel.toggleSelection(notification.id)
+                                            }
+                                        },
+                                        modifier = Modifier.animateItem()
+                                    )
+                                }
+                            }
                         }
                     }
+                }
 
-                    // ---- Time-grouped sections ----
-                    groupedNotifications.forEach { (timeGroup, notifications) ->
-                        item(key = "header_${timeGroup.name}") {
-                            SectionHeader(
-                                label = timeGroup.header,
-                                color = TerminalColors.Timestamp,
-                                count = notifications.size
-                            )
-                        }
+                ViewMode.GROUPED -> {
+                    // ---- GROUPED mode: notifications grouped by app ----
+                    if (appGroupedNotifications.isEmpty()) {
+                        EmptyState(selectedFilter = selectedFilter)
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            contentPadding = PaddingValues(
+                                start = 12.dp,
+                                end = 12.dp,
+                                top = 8.dp,
+                                bottom = if (isSelectionMode) 80.dp else 16.dp
+                            ),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            appGroupedNotifications.forEach { group ->
+                                val isExpanded = group.packageName in expandedGroups
 
-                        items(
-                            items = notifications,
-                            key = { it.id }
-                        ) { notification ->
-                            SwipeableNotificationCard(
-                                notification = notification,
-                                isSelected = notification.id in selectedKeys,
-                                isSelectionMode = isSelectionMode,
-                                isExpanded = expandedId == notification.id,
-                                appMetadata = viewModel.getAppMetadata(notification.packageName),
-                                onDismiss = { viewModel.dismissNotification(notification.id) },
-                                onSnooze = { snoozePickerNotification = notification },
-                                onClick = {
-                                    if (isSelectionMode) {
-                                        viewModel.toggleSelection(notification.id)
-                                    } else {
-                                        viewModel.markAsRead(notification.id)
-                                        viewModel.toggleExpanded(notification.id)
+                                // Group header
+                                item(key = "group_header_${group.packageName}") {
+                                    AppGroupHeader(
+                                        group = group,
+                                        isExpanded = isExpanded,
+                                        appMetadata = viewModel.getAppMetadata(group.packageName),
+                                        onClick = { viewModel.toggleGroupExpanded(group.packageName) }
+                                    )
+                                }
+
+                                // Expanded notifications within the group
+                                if (isExpanded) {
+                                    items(
+                                        items = group.notifications,
+                                        key = { "grouped_${it.id}" }
+                                    ) { notification ->
+                                        SwipeableNotificationCard(
+                                            notification = notification,
+                                            isSelected = notification.id in selectedKeys,
+                                            isSelectionMode = isSelectionMode,
+                                            isExpanded = expandedId == notification.id,
+                                            appMetadata = viewModel.getAppMetadata(notification.packageName),
+                                            onDismiss = { viewModel.dismissNotification(notification.id) },
+                                            onSnooze = { snoozePickerNotification = notification },
+                                            onClick = {
+                                                if (isSelectionMode) {
+                                                    viewModel.toggleSelection(notification.id)
+                                                } else {
+                                                    viewModel.markAsRead(notification.id)
+                                                    viewModel.toggleExpanded(notification.id)
+                                                }
+                                            },
+                                            onLongPress = {
+                                                if (!isSelectionMode) {
+                                                    actionSheetNotification = notification
+                                                } else {
+                                                    viewModel.toggleSelection(notification.id)
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .padding(start = 12.dp)
+                                                .animateItem()
+                                        )
                                     }
-                                },
-                                onLongPress = {
-                                    if (!isSelectionMode) {
-                                        actionSheetNotification = notification
-                                    } else {
-                                        viewModel.toggleSelection(notification.id)
-                                    }
-                                },
-                                modifier = Modifier.animateItem()
-                            )
+                                }
+                            }
                         }
                     }
+                }
+
+                ViewMode.DIGEST -> {
+                    // ---- DIGEST mode: summary view ----
+                    NotificationDigestView(
+                        digestEntries = digestEntries,
+                        totalCount = digestTotalCount,
+                        onEntryClick = { packageName ->
+                            // Switch to grouped view and expand that app's group
+                            viewModel.setViewMode(ViewMode.GROUPED)
+                            viewModel.toggleGroupExpanded(packageName)
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
         }
@@ -403,7 +509,8 @@ private fun NotificationCenterTopBar(
     notificationCount: Int,
     unreadCount: Int,
     onBack: () -> Unit,
-    onClearAll: () -> Unit
+    onClearAll: () -> Unit,
+    onClearAllRead: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -480,20 +587,41 @@ private fun NotificationCenterTopBar(
 
         Spacer(modifier = Modifier.weight(1f))
 
-        // Clear all button
+        // Clear all read button
         if (notificationCount > 0) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(TerminalColors.Warning.copy(alpha = 0.15f))
+                    .clickable(onClick = onClearAllRead)
+                    .padding(horizontal = 6.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = "$ vacuum",
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = TerminalColors.Warning
+                    )
+                )
+            }
+
+            Spacer(modifier = Modifier.width(4.dp))
+
+            // Clear all button
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(4.dp))
                     .background(TerminalColors.Error.copy(alpha = 0.15f))
                     .clickable(onClick = onClearAll)
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .padding(horizontal = 6.dp, vertical = 4.dp)
             ) {
                 Text(
                     text = "$ clear",
                     style = TextStyle(
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Medium,
                         color = TerminalColors.Error
                     )
@@ -567,6 +695,173 @@ private fun FilterTab(
                 fontSize = 11.sp,
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                 color = textColor
+            )
+        )
+    }
+}
+
+// =====================================================================================
+// View mode tab row: [flat] [grouped] [digest]
+// =====================================================================================
+
+@Composable
+private fun ViewModeTabRow(
+    selectedMode: ViewMode,
+    onModeSelected: (ViewMode) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(TerminalColors.StatusBar)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "$ view",
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                color = TerminalColors.Prompt
+            )
+        )
+
+        ViewMode.entries.forEach { mode ->
+            ViewModeTab(
+                mode = mode,
+                isSelected = mode == selectedMode,
+                onClick = { onModeSelected(mode) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ViewModeTab(
+    mode: ViewMode,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    val backgroundColor by animateColorAsState(
+        targetValue = if (isSelected) TerminalColors.Accent.copy(alpha = 0.25f) else TerminalColors.Surface.copy(alpha = 0.3f),
+        animationSpec = tween(200),
+        label = "viewModeBg"
+    )
+    val textColor by animateColorAsState(
+        targetValue = if (isSelected) TerminalColors.Accent else TerminalColors.Timestamp,
+        animationSpec = tween(200),
+        label = "viewModeText"
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (isSelected) TerminalColors.Accent.copy(alpha = 0.6f) else Color.Transparent,
+        animationSpec = tween(200),
+        label = "viewModeBorder"
+    )
+
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(backgroundColor)
+            .then(
+                if (isSelected) {
+                    Modifier.border(1.dp, borderColor, RoundedCornerShape(4.dp))
+                } else {
+                    Modifier
+                }
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+    ) {
+        Text(
+            text = "[${mode.label}]",
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                color = textColor
+            )
+        )
+    }
+}
+
+// =====================================================================================
+// App group header (GROUPED view mode)
+// =====================================================================================
+
+@Composable
+private fun AppGroupHeader(
+    group: NotificationGroup,
+    isExpanded: Boolean,
+    appMetadata: AppMetadata,
+    onClick: () -> Unit
+) {
+    val backgroundColor by animateColorAsState(
+        targetValue = if (isExpanded) TerminalColors.Surface else TerminalColors.Surface.copy(alpha = 0.6f),
+        animationSpec = tween(200),
+        label = "groupHeaderBg"
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(backgroundColor)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // App icon
+        AppIconView(
+            appIcon = appMetadata.appIcon,
+            size = 20
+        )
+
+        Spacer(modifier = Modifier.width(10.dp))
+
+        // App name
+        Text(
+            text = group.appName,
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = TerminalColors.Command
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        // Notification count badge
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(4.dp))
+                .background(TerminalColors.Accent.copy(alpha = 0.2f))
+                .padding(horizontal = 6.dp, vertical = 2.dp)
+        ) {
+            Text(
+                text = "${group.count}",
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TerminalColors.Accent
+                )
+            )
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        // Expand/collapse indicator
+        Text(
+            text = if (isExpanded) "[-]" else "[+]",
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = TerminalColors.Timestamp
             )
         )
     }

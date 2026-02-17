@@ -28,5 +28,20 @@ data class NotificationEntity(
     val isSnoozed: Boolean = false,
     val snoozeUntil: Long = 0L,
     val isRead: Boolean = false,
-    val isDismissed: Boolean = false
+    val isDismissed: Boolean = false,
+
+    /** Notification group key for grouping related notifications. */
+    val groupKey: String? = null,
+
+    /** Conversation title for messaging-style notifications (e.g., group chat name). */
+    val conversationTitle: String? = null,
+
+    /** Number of available actions on the notification. */
+    val actionCount: Int = 0,
+
+    /** Whether this notification has a direct reply action (RemoteInput). */
+    val hasReplyAction: Boolean = false,
+
+    /** URI of the notification's large icon or thumbnail. */
+    val thumbnailUri: String? = null
 )

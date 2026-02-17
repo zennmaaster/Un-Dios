@@ -173,6 +173,42 @@ enum class TimeGroup(val header: String) {
 }
 
 // =====================================================================================
+// ViewMode — notification center display modes
+// =====================================================================================
+
+/**
+ * Display mode for the notification center.
+ *
+ * Controls how notifications are organized and presented:
+ * - [FLAT]: Traditional chronological list with time-grouped sections (default).
+ * - [GROUPED]: Notifications grouped by app with expand/collapse per group.
+ * - [DIGEST]: Aggregated summary view showing per-app counts and percentages.
+ */
+enum class ViewMode(val label: String, val flag: String) {
+    FLAT("flat", "--view=flat"),
+    GROUPED("grouped", "--view=grouped"),
+    DIGEST("digest", "--view=digest")
+}
+
+// =====================================================================================
+// NotificationGroup — app-level notification grouping
+// =====================================================================================
+
+/**
+ * Represents a group of notifications from the same app package.
+ *
+ * Used in the GROUPED view mode to show a collapsible header per app
+ * with a count badge and the list of individual notifications within.
+ */
+data class NotificationGroup(
+    val appName: String,
+    val packageName: String,
+    val notifications: List<NotificationEntry>,
+    val count: Int,
+    val latestTimestamp: Long
+)
+
+// =====================================================================================
 // SnoozeDuration — predefined snooze intervals
 // =====================================================================================
 

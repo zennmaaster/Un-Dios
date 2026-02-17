@@ -36,7 +36,7 @@ import com.castor.core.data.db.entity.WatchHistoryEntity
         NoteEntity::class,
         NotificationEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 abstract class CastorDatabase : RoomDatabase() {

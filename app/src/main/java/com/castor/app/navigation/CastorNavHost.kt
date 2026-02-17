@@ -35,6 +35,7 @@ import com.castor.feature.messaging.ui.MessagingScreen
 import com.castor.feature.notifications.center.NotificationCenterScreen
 import com.castor.feature.recommendations.ui.RecommendationsScreen
 import com.castor.feature.recommendations.ui.WatchHistoryScreen
+import com.castor.core.inference.ui.ModelManagerScreen
 import com.castor.feature.reminders.ui.RemindersScreen
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -71,6 +72,7 @@ import java.nio.charset.StandardCharsets
  * - "settings"     — launcher settings (/etc/un-dios/config)
  * - "theme_selector" — terminal color theme picker (/etc/un-dios/themes.conf)
  * - "battery_optimization" — battery optimization guide (/etc/un-dios/battery-optimization.md)
+ * - "model_manager" — download and manage on-device LLM models (/var/un-dios/models)
  * - "about"        — about screen (/etc/un-dios/about)
  *
  * Note: The app drawer is implemented as a full-screen overlay within HomeScreen
@@ -261,11 +263,18 @@ fun CastorNavHost(
                     onNavigateToThemeSelector = { navController.navigate("theme_selector") },
                     onNavigateToBatteryOptimization = { navController.navigate("battery_optimization") },
                     onNavigateToAbout = { navController.navigate("about") },
+                    onNavigateToModelManager = { navController.navigate("model_manager") },
                     themeManager = themeManager,
                     launcherPreferencesManager = launcherPreferencesManager,
                     securePreferences = securePreferences
                 )
             }
+        }
+
+        composable("model_manager") {
+            ModelManagerScreen(
+                onBack = { navController.popBackStack() }
+            )
         }
 
         composable("theme_selector") {

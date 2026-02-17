@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -80,6 +81,7 @@ fun LauncherSettingsScreen(
     onNavigateToThemeSelector: () -> Unit = {},
     onNavigateToBatteryOptimization: () -> Unit = {},
     onNavigateToAbout: () -> Unit = {},
+    onNavigateToModelManager: () -> Unit = {},
     themeManager: ThemeManager? = null,
     lockScreenViewModel: LockScreenViewModel = hiltViewModel(),
     launcherPreferencesManager: LauncherPreferencesManager,
@@ -275,6 +277,19 @@ fun LauncherSettingsScreen(
                 LockTimeoutSelector(
                     currentTimeoutMs = lockTimeoutMs,
                     onTimeoutSelected = { lockScreenViewModel.setLockTimeout(it) }
+                )
+            }
+
+            item { SettingsDivider() }
+
+            // ================================================================
+            // [ai-engine] section
+            // ================================================================
+            item { SettingsSectionHeader(title = "ai-engine") }
+
+            item {
+                AiModelSettingsRow(
+                    onClick = onNavigateToModelManager
                 )
             }
 
@@ -847,6 +862,65 @@ private fun SettingsActionRow(
 
         Text(
             text = "# $description",
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+                color = TerminalColors.Subtext
+            ),
+            modifier = Modifier.padding(top = 2.dp)
+        )
+    }
+}
+
+/**
+ * A settings row for navigating to the AI model manager.
+ * Styled with an icon, action label, and description matching the terminal aesthetic.
+ */
+@Composable
+private fun AiModelSettingsRow(
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .background(TerminalColors.Surface.copy(alpha = 0.5f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Filled.SmartToy,
+                contentDescription = null,
+                tint = TerminalColors.Accent,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "ai.models",
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    color = TerminalColors.Command
+                )
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "= \"Manage AI models\"",
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TerminalColors.Accent
+                )
+            )
+        }
+
+        Text(
+            text = "# Download and manage on-device LLM models",
             style = TextStyle(
                 fontFamily = FontFamily.Monospace,
                 fontSize = 10.sp,

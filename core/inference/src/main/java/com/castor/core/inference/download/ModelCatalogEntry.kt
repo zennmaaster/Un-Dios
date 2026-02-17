@@ -53,6 +53,36 @@ object ModelCatalog {
 
     val entries: List<ModelCatalogEntry> = listOf(
         ModelCatalogEntry(
+            id = "qwen25-0.5b-q4km",
+            displayName = "Qwen2.5 0.5B Instruct",
+            family = ModelFamily.QWEN25,
+            parameterCount = "0.5B",
+            quantization = "Q4_K_M",
+            fileSizeBytes = 397_557_760L, // ~400 MB
+            downloadUrl = "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf",
+            sha256 = "", // TODO: Fill with actual checksum once verified
+            promptFormat = PromptFormat.CHATML,
+            contextLength = 32768,
+            recommended = false,
+            description = "Ultra-lightweight model for quick responses. Ideal for low-RAM " +
+                "devices or fast on-device tasks. Reduced quality vs larger models."
+        ),
+        ModelCatalogEntry(
+            id = "qwen25-1.5b-q4km",
+            displayName = "Qwen2.5 1.5B Instruct",
+            family = ModelFamily.QWEN25,
+            parameterCount = "1.5B",
+            quantization = "Q4_K_M",
+            fileSizeBytes = 1_073_741_824L, // ~1.0 GB
+            downloadUrl = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+            sha256 = "", // TODO: Fill with actual checksum once verified
+            promptFormat = PromptFormat.CHATML,
+            contextLength = 32768,
+            recommended = false,
+            description = "Balanced model for devices with 4+ GB RAM. Good instruction " +
+                "following with reasonable speed. Best value for most tasks."
+        ),
+        ModelCatalogEntry(
             id = "qwen25-3b-q4km",
             displayName = "Qwen2.5 3B Instruct",
             family = ModelFamily.QWEN25,
@@ -65,22 +95,7 @@ object ModelCatalog {
             contextLength = 32768,
             recommended = true,
             description = "Best balance of quality and speed. Strong instruction following, " +
-                "multilingual support. Recommended for most devices with 6+ GB RAM."
-        ),
-        ModelCatalogEntry(
-            id = "qwen25-1.5b-q4km",
-            displayName = "Qwen2.5 1.5B Instruct",
-            family = ModelFamily.QWEN25,
-            parameterCount = "1.5B",
-            quantization = "Q4_K_M",
-            fileSizeBytes = 1_073_741_824L, // ~1.1 GB
-            downloadUrl = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
-            sha256 = "", // TODO: Fill with actual checksum once verified
-            promptFormat = PromptFormat.CHATML,
-            contextLength = 32768,
-            recommended = false,
-            description = "Lightweight model for devices with limited RAM (4 GB). " +
-                "Faster inference but reduced quality compared to 3B."
+                "multilingual support. Recommended for devices with 8+ GB RAM."
         ),
         ModelCatalogEntry(
             id = "phi3-mini-q4",

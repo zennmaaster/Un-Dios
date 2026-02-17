@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -20,6 +21,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Circle
@@ -29,6 +31,9 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -53,6 +58,7 @@ import com.castor.app.launcher.AppDrawer
 import com.castor.app.launcher.GestureHandler
 import com.castor.app.lockscreen.LockScreenOverlay
 import com.castor.app.lockscreen.LockScreenViewModel
+import com.castor.core.data.repository.ReminderRepository
 import com.castor.core.security.BiometricAuthManager
 import com.castor.core.ui.components.AgentCard
 import com.castor.core.ui.components.QuickLaunchBar
@@ -68,6 +74,7 @@ import com.castor.app.search.UniversalSearchOverlay
 import com.castor.app.weather.WeatherCard
 import com.castor.feature.commandbar.CommandBar
 import com.castor.feature.commandbar.CommandBarViewModel
+import com.castor.feature.reminders.engine.ReminderScheduler
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -81,11 +88,14 @@ import java.util.Locale
  *    a. CastorTerminal (via CommandBar) -- expanded by default, ~40% of screen
  *    b. WeatherCard -- full-width weather display (spans 2 columns)
  *    c. BriefingCard -- full-width briefing with real data (spans 2 columns)
- *    d. SuggestionsRow -- context-aware horizontal suggestion chips (spans 2 columns)
- *    e. Agent cards -- 2-column grid (Messages, Media, Reminders, AI)
+ *    d. CalendarCard -- today's agenda from CalendarContract (spans 2 columns)
+ *    e. SuggestionsRow -- context-aware horizontal suggestion chips (spans 2 columns)
+ *    f. Agent cards -- 2-column grid (Messages, Media, Reminders, AI)
  *       each showing live status info
- *    f. Last synced timestamp footer
+ *    g. Last synced timestamp footer
  * 3. QuickLaunchBar -- Ubuntu-style dock at the bottom
+ * 4. FloatingActionButton -- quick-add reminder ($ +), positioned above the dock
+ * 5. QuickAddReminderSheet -- modal bottom sheet for creating reminders
  *
  * The entire home screen is wrapped in a [GestureHandler] that provides:
  * - Swipe up: Opens the GNOME Activities-style app drawer
@@ -116,7 +126,8 @@ fun HomeScreen(
     viewModel: CommandBarViewModel = hiltViewModel(),
     systemStatsViewModel: SystemStatsViewModel = hiltViewModel(),
     lockScreenViewModel: LockScreenViewModel = hiltViewModel(),
-    briefingViewModel: BriefingViewModel = hiltViewModel()
+    briefingViewModel: BriefingViewModel = hiltViewModel(),
+    calendarViewModel: CalendarViewModel = hiltViewModel()
 ) {
     val commandBarState by viewModel.uiState.collectAsState()
 
@@ -125,6 +136,9 @@ fun HomeScreen(
 
     // Universal search overlay visibility state
     var isSearchVisible by rememberSaveable { mutableStateOf(false) }
+
+    // Quick-add reminder bottom sheet visibility state
+    var isQuickAddReminderVisible by rememberSaveable { mutableStateOf(false) }
 
     // Real-time system stats from SystemStatsProvider (CPU, RAM, battery, WiFi, BT, time, etc.)
     val systemStats by systemStatsViewModel.stats.collectAsState()
@@ -244,6 +258,15 @@ fun HomeScreen(
                                 onViewMessages = onNavigateToMessages,
                                 onViewReminders = onNavigateToReminders,
                                 onViewNotifications = onNavigateToNotificationCenter,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        // ---- Calendar agenda card: spans full width, today's events from CalendarContract ----
+                        item(span = { GridItemSpan(2) }) {
+                            CalendarCard(
+                                calendarViewModel = calendarViewModel,
+                                onViewAll = onNavigateToReminders,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -424,6 +447,42 @@ fun HomeScreen(
         }
 
         // ====================================================================
+        // Layer 1.5: Floating Action Button for quick-add reminder
+        // ====================================================================
+        FloatingActionButton(
+            onClick = { isQuickAddReminderVisible = true },
+            containerColor = TerminalColors.Accent,
+            contentColor = TerminalColors.Background,
+            shape = RoundedCornerShape(14.dp),
+            elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 16.dp, bottom = 80.dp) // Above the QuickLaunchBar
+                .navigationBarsPadding()
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            ) {
+                Text(
+                    text = "$ ",
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TerminalColors.Background
+                    )
+                )
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Quick add reminder",
+                    tint = TerminalColors.Background,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+
+        // ====================================================================
         // Layer 2: App drawer overlay (GNOME Activities)
         // ====================================================================
         AppDrawer(
@@ -506,6 +565,25 @@ fun HomeScreen(
                 lockScreenViewModel.unlockScreen()
                 onNavigateToNotificationCenter()
             }
+        )
+    }
+
+    // ========================================================================
+    // Quick Add Reminder Bottom Sheet (rendered outside the Box so it overlays
+    // everything including the lock screen -- but only visible when triggered)
+    // ========================================================================
+    if (isQuickAddReminderVisible) {
+        val appContext = context.applicationContext
+        val entryPoint = dagger.hilt.android.EntryPointAccessors.fromApplication(
+            appContext,
+            QuickAddReminderEntryPoint::class.java
+        )
+
+        QuickAddReminderSheet(
+            isVisible = true,
+            onDismiss = { isQuickAddReminderVisible = false },
+            reminderRepository = entryPoint.reminderRepository(),
+            reminderScheduler = entryPoint.reminderScheduler()
         )
     }
 }
@@ -611,4 +689,23 @@ private fun LastSyncedFooter(lastUpdatedMs: Long?) {
             )
         )
     }
+}
+
+// ============================================================================
+// Hilt EntryPoint for accessing dependencies in QuickAddReminderSheet
+// ============================================================================
+
+/**
+ * Hilt [EntryPoint] providing [ReminderRepository] and [ReminderScheduler]
+ * to [QuickAddReminderSheet] from the application-scoped component.
+ *
+ * We use an entry point rather than injecting these into [HomeScreen] because
+ * the sheet is a standalone composable that needs raw repository access rather
+ * than going through a ViewModel indirection.
+ */
+@dagger.hilt.EntryPoint
+@dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+interface QuickAddReminderEntryPoint {
+    fun reminderRepository(): ReminderRepository
+    fun reminderScheduler(): ReminderScheduler
 }

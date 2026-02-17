@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.castor.core.data.db.dao.NotificationDao
+import com.castor.core.data.db.dao.NotificationDigestRow
 import com.castor.core.data.db.entity.NotificationEntity
 import com.castor.feature.notifications.CastorNotificationListener
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -92,6 +93,9 @@ class NotificationCenterViewModel @Inject constructor(
         /** Work-hours window used for priority boosting work notifications. */
         private const val WORK_HOUR_START = 9
         private const val WORK_HOUR_END = 18
+
+        /** Time window for the digest view (24 hours in milliseconds). */
+        private const val DIGEST_WINDOW_MS = 24 * 60 * 60 * 1000L
     }
 
     // -------------------------------------------------------------------------------------
@@ -120,6 +124,13 @@ class NotificationCenterViewModel @Inject constructor(
 
     private val _expandedNotificationId = MutableStateFlow<String?>(null)
     val expandedNotificationId: StateFlow<String?> = _expandedNotificationId.asStateFlow()
+
+    private val _viewMode = MutableStateFlow(ViewMode.FLAT)
+    val viewMode: StateFlow<ViewMode> = _viewMode.asStateFlow()
+
+    /** Tracks which app groups are expanded in GROUPED view mode. */
+    private val _expandedGroups = MutableStateFlow<Set<String>>(emptySet())
+    val expandedGroups: StateFlow<Set<String>> = _expandedGroups.asStateFlow()
 
     // -------------------------------------------------------------------------------------
     // Public derived state — from Room DB
@@ -208,6 +219,55 @@ class NotificationCenterViewModel @Inject constructor(
                 .toSortedMap(compareBy { it.ordinal })
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /**
+     * Notifications grouped by app package for the GROUPED view mode.
+     *
+     * Each [NotificationGroup] contains all filtered notifications from a single app,
+     * sorted by latest timestamp descending.
+     */
+    val appGroupedNotifications: StateFlow<List<NotificationGroup>> = filteredNotifications
+        .map { entries ->
+            entries
+                .groupBy { it.packageName }
+                .map { (packageName, notifications) ->
+                    NotificationGroup(
+                        appName = notifications.first().appName,
+                        packageName = packageName,
+                        notifications = notifications.sortedByDescending { it.timestamp },
+                        count = notifications.size,
+                        latestTimestamp = notifications.maxOf { it.timestamp }
+                    )
+                }
+                .sortedByDescending { it.latestTimestamp }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * Notification digest entries for the DIGEST view mode.
+     *
+     * Aggregates notification counts per app for the last 24 hours using
+     * the Room digest query.
+     */
+    val digestEntries: StateFlow<List<NotificationDigestEntry>> = notificationDao
+        .getNotificationDigest(since = System.currentTimeMillis() - DIGEST_WINDOW_MS)
+        .map { rows ->
+            rows.map { row ->
+                NotificationDigestEntry(
+                    appName = row.appName,
+                    packageName = row.packageName,
+                    count = row.count,
+                    latestMessage = row.latestMessage,
+                    latestTimestamp = row.latestTimestamp
+                )
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Total notification count across all digest entries. */
+    val digestTotalCount: StateFlow<Int> = digestEntries
+        .map { entries -> entries.sumOf { it.count } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     // -------------------------------------------------------------------------------------
     // Init — start polling + periodic un-snooze
@@ -333,6 +393,38 @@ class NotificationCenterViewModel @Inject constructor(
         }
     }
 
+    /** Soft-delete all read (non-dismissed) notifications. */
+    fun clearAllRead() {
+        viewModelScope.launch {
+            notificationDao.clearAllRead()
+            Log.d(TAG, "Cleared all read notifications")
+        }
+    }
+
+    // -------------------------------------------------------------------------------------
+    // View mode
+    // -------------------------------------------------------------------------------------
+
+    /** Switch the notification center display mode. */
+    fun setViewMode(mode: ViewMode) {
+        _viewMode.value = mode
+        // Clear selection when switching views to avoid stale state.
+        clearSelection()
+        Log.d(TAG, "View mode changed to: $mode")
+    }
+
+    /** Toggle expand/collapse for an app group in GROUPED view mode. */
+    fun toggleGroupExpanded(packageName: String) {
+        _expandedGroups.update { current ->
+            if (packageName in current) current - packageName else current + packageName
+        }
+    }
+
+    /** Check if an app group is expanded in GROUPED view mode. */
+    fun isGroupExpanded(packageName: String): Boolean {
+        return packageName in _expandedGroups.value
+    }
+
     // -------------------------------------------------------------------------------------
     // Selection / bulk actions
     // -------------------------------------------------------------------------------------
@@ -453,6 +545,21 @@ class NotificationCenterViewModel @Inject constructor(
         val category = NotificationCategory.fromPackageName(packageName)
         val priority = detectPriority(category)
 
+        // Extract enriched metadata for grouping and digest features.
+        val groupKey = sbn.groupKey
+        val conversationTitle = extras
+            .getCharSequence(android.app.Notification.EXTRA_CONVERSATION_TITLE)?.toString()
+            ?.takeIf { it.isNotBlank() }
+        val actionCount = notification.actions?.size ?: 0
+        val hasReplyAction = notification.actions?.any { action ->
+            action.remoteInputs?.isNotEmpty() == true
+        } == true
+        val thumbnailUri = try {
+            notification.getLargeIcon()?.uri?.toString()
+        } catch (_: Exception) {
+            null
+        }
+
         return NotificationEntity(
             id = sbn.key,
             appName = resolveAppName(packageName),
@@ -461,7 +568,12 @@ class NotificationCenterViewModel @Inject constructor(
             content = content,
             timestamp = sbn.postTime,
             category = category.name,
-            priority = priority.name
+            priority = priority.name,
+            groupKey = groupKey,
+            conversationTitle = conversationTitle,
+            actionCount = actionCount,
+            hasReplyAction = hasReplyAction,
+            thumbnailUri = thumbnailUri
         )
     }
 

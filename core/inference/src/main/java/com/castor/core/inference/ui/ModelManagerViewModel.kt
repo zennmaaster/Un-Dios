@@ -1,5 +1,7 @@
 package com.castor.core.inference.ui
 
+import android.os.Environment
+import android.os.StatFs
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.castor.core.inference.LocalModelInfo
@@ -9,6 +11,7 @@ import com.castor.core.inference.download.ModelCatalog
 import com.castor.core.inference.download.ModelCatalogEntry
 import com.castor.core.inference.download.ModelDownloadManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -19,6 +22,17 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
+ * Storage usage information for the model directory.
+ *
+ * @param usedBytes Total bytes used by downloaded models
+ * @param availableBytes Available bytes on the device's internal storage
+ */
+data class StorageInfo(
+    val usedBytes: Long = 0L,
+    val availableBytes: Long = 0L
+)
+
+/**
  * UI state for the model manager screen.
  *
  * @param localModels Models currently on device with metadata
@@ -27,6 +41,8 @@ import javax.inject.Inject
  * @param currentModelName Name of the currently loaded model, or null
  * @param modelState Current model loading state
  * @param isRefreshing Whether the model list is being refreshed
+ * @param storageInfo Storage usage information for the models directory
+ * @param selectedTab Currently selected tab index (0 = Installed, 1 = Available)
  */
 data class ModelManagerUiState(
     val localModels: List<LocalModelInfo> = emptyList(),
@@ -34,7 +50,9 @@ data class ModelManagerUiState(
     val downloadStates: Map<String, DownloadState> = emptyMap(),
     val currentModelName: String? = null,
     val modelState: ModelManager.ModelState = ModelManager.ModelState.NotLoaded,
-    val isRefreshing: Boolean = false
+    val isRefreshing: Boolean = false,
+    val storageInfo: StorageInfo = StorageInfo(),
+    val selectedTab: Int = 0
 )
 
 /**
@@ -54,12 +72,26 @@ class ModelManagerViewModel @Inject constructor(
 
     private val _downloadStates = MutableStateFlow<Map<String, DownloadState>>(emptyMap())
     private val _isRefreshing = MutableStateFlow(false)
+    private val _storageInfo = MutableStateFlow(StorageInfo())
+    private val _selectedTab = MutableStateFlow(0)
+
+    /** Active download jobs, keyed by catalog entry ID. Used for cancellation. */
+    private val downloadJobs = mutableMapOf<String, Job>()
 
     val uiState: StateFlow<ModelManagerUiState> = combine(
         modelManager.modelState,
         _downloadStates,
-        _isRefreshing
-    ) { modelState, downloadStates, isRefreshing ->
+        _isRefreshing,
+        _storageInfo,
+        _selectedTab
+    ) { values ->
+        val modelState = values[0] as ModelManager.ModelState
+        @Suppress("UNCHECKED_CAST")
+        val downloadStates = values[1] as Map<String, DownloadState>
+        val isRefreshing = values[2] as Boolean
+        val storageInfo = values[3] as StorageInfo
+        val selectedTab = values[4] as Int
+
         val currentModelName = when (modelState) {
             is ModelManager.ModelState.Loaded -> modelState.modelName
             is ModelManager.ModelState.Loading -> modelState.modelName
@@ -72,7 +104,9 @@ class ModelManagerViewModel @Inject constructor(
             downloadStates = downloadStates,
             currentModelName = currentModelName,
             modelState = modelState,
-            isRefreshing = isRefreshing
+            isRefreshing = isRefreshing,
+            storageInfo = storageInfo,
+            selectedTab = selectedTab
         )
     }.stateIn(
         scope = viewModelScope,
@@ -89,6 +123,14 @@ class ModelManagerViewModel @Inject constructor(
             }
             _downloadStates.value = states
         }
+        updateStorageInfo()
+    }
+
+    /**
+     * Select a tab (0 = Installed, 1 = Available).
+     */
+    fun selectTab(index: Int) {
+        _selectedTab.value = index
     }
 
     /**
@@ -102,6 +144,7 @@ class ModelManagerViewModel @Inject constructor(
                 entry.id to downloadManager.getDownloadState(entry.id).value
             }
             _downloadStates.value = states
+            updateStorageInfo()
             _isRefreshing.value = false
         }
     }
@@ -111,9 +154,13 @@ class ModelManagerViewModel @Inject constructor(
      *
      * Launches a coroutine that downloads the model file and updates
      * the download state flow. The UI observes the state for progress.
+     * The job is tracked so it can be cancelled via [cancelDownload].
      */
     fun downloadModel(entry: ModelCatalogEntry) {
-        viewModelScope.launch {
+        // Cancel any existing download for this model
+        downloadJobs[entry.id]?.cancel()
+
+        val job = viewModelScope.launch {
             // Collect download state updates
             val stateFlow = downloadManager.getDownloadState(entry.id)
             launch {
@@ -129,6 +176,23 @@ class ModelManagerViewModel @Inject constructor(
             // After download completes, refresh model list
             refreshModels()
         }
+        downloadJobs[entry.id] = job
+    }
+
+    /**
+     * Cancel an in-progress download.
+     *
+     * Cancels the coroutine job which triggers [CancellationException]
+     * in the download manager, setting the state to [DownloadState.Paused].
+     */
+    fun cancelDownload(entry: ModelCatalogEntry) {
+        downloadJobs[entry.id]?.cancel()
+        downloadJobs.remove(entry.id)
+        _downloadStates.update { map ->
+            map + (entry.id to DownloadState.Idle)
+        }
+        // Clean up partial file
+        downloadManager.deleteModel(entry)
     }
 
     /**
@@ -173,5 +237,31 @@ class ModelManagerViewModel @Inject constructor(
      */
     fun isModelDownloaded(entry: ModelCatalogEntry): Boolean {
         return downloadManager.isModelDownloaded(entry)
+    }
+
+    /**
+     * Update storage usage information.
+     *
+     * Computes total bytes used by model files in the models directory
+     * and queries available disk space via [StatFs].
+     */
+    private fun updateStorageInfo() {
+        val modelsDir = downloadManager.modelsDir
+        val usedBytes = modelsDir.listFiles()
+            ?.filter { it.isFile }
+            ?.sumOf { it.length() }
+            ?: 0L
+
+        val availableBytes = try {
+            val stat = StatFs(Environment.getDataDirectory().path)
+            stat.availableBlocksLong * stat.blockSizeLong
+        } catch (_: Exception) {
+            0L
+        }
+
+        _storageInfo.value = StorageInfo(
+            usedBytes = usedBytes,
+            availableBytes = availableBytes
+        )
     }
 }
