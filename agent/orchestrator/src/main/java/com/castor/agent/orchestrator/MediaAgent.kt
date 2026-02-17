@@ -1,9 +1,12 @@
 package com.castor.agent.orchestrator
 
+import android.util.Log
 import com.castor.core.common.model.MediaSource
 import com.castor.core.common.model.MediaType
 import com.castor.core.data.repository.MediaQueueRepository
 import com.castor.core.inference.InferenceEngine
+import com.castor.feature.media.session.MediaSessionMonitor
+import com.castor.feature.media.session.UnifiedTransportControls
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -53,18 +56,26 @@ data class MediaCommand(
  * free-form input. When the LLM is unavailable, it falls back to keyword/regex-based
  * parsing so that basic media commands still work offline.
  *
+ * Transport commands (PLAY, PAUSE, SKIP_NEXT, SKIP_PREVIOUS) are executed immediately
+ * via [UnifiedTransportControls], which routes them to the active system media session
+ * (Spotify, YouTube, Audible, etc.). The WHAT_IS_PLAYING query reads real-time data
+ * from [MediaSessionMonitor] and falls back to the persisted queue.
+ *
  * Usage:
  * - Call [parseMediaCommand] to convert user input into a [MediaCommand].
  * - Call [describeAction] to generate a user-facing natural language response.
- * - Call [handleCommand] for a one-shot parse + describe + optional queue operation.
+ * - Call [handleCommand] for a one-shot parse + execute + response.
  */
 @Singleton
 class MediaAgent @Inject constructor(
     private val engine: InferenceEngine,
-    private val mediaQueueRepository: MediaQueueRepository
+    private val mediaQueueRepository: MediaQueueRepository,
+    private val transportControls: UnifiedTransportControls,
+    private val mediaSessionMonitor: MediaSessionMonitor
 ) {
 
     companion object {
+        private const val TAG = "MediaAgent"
         private const val PARSE_MAX_TOKENS = 192
         private const val DESCRIBE_MAX_TOKENS = 128
 
@@ -157,27 +168,88 @@ Do not use markdown. Do not add any preamble."""
     }
 
     /**
-     * One-shot convenience: parse the input, describe the action, and return the response.
-     * If the command is WHAT_IS_PLAYING, queries the media queue for the current item.
+     * One-shot convenience: parse the input, execute the action, and return a
+     * confirmation message.
+     *
+     * For transport commands (PLAY, PAUSE, SKIP_NEXT, SKIP_PREVIOUS), the
+     * corresponding [UnifiedTransportControls] method is called so the command
+     * actually affects the active media session across Spotify, YouTube, and
+     * Audible. For WHAT_IS_PLAYING, real-time data is read from
+     * [MediaSessionMonitor] first, falling back to [MediaQueueRepository].
      */
     suspend fun handleCommand(input: String): String {
         val command = parseMediaCommand(input)
 
         return when (command.action) {
-            MediaAction.WHAT_IS_PLAYING -> {
-                val currentItem = try {
-                    mediaQueueRepository.getCurrentItem()
-                } catch (e: Exception) {
-                    null
-                }
-                if (currentItem != null) {
-                    val artistText = if (currentItem.artist != null) " by ${currentItem.artist}" else ""
-                    "Now playing: ${currentItem.title}$artistText (${currentItem.source.name.lowercase()})"
+            MediaAction.PLAY -> {
+                if (command.source != null) {
+                    transportControls.playSource(command.source)
                 } else {
-                    "Nothing is currently playing."
+                    transportControls.play()
+                }
+                Log.d(TAG, "handleCommand: PLAY executed")
+                if (command.query != null) {
+                    "Playing ${command.query}${command.source?.let { " on ${it.name.lowercase()}" } ?: ""}."
+                } else {
+                    "Resuming playback."
                 }
             }
-            else -> describeAction(command)
+
+            MediaAction.PAUSE -> {
+                if (command.source != null) {
+                    transportControls.pauseSource(command.source)
+                } else {
+                    transportControls.pause()
+                }
+                Log.d(TAG, "handleCommand: PAUSE executed")
+                "Playback paused."
+            }
+
+            MediaAction.SKIP_NEXT -> {
+                transportControls.skipNext()
+                Log.d(TAG, "handleCommand: SKIP_NEXT executed")
+                "Skipped to the next track."
+            }
+
+            MediaAction.SKIP_PREVIOUS -> {
+                transportControls.skipPrevious()
+                Log.d(TAG, "handleCommand: SKIP_PREVIOUS executed")
+                "Went back to the previous track."
+            }
+
+            MediaAction.WHAT_IS_PLAYING -> {
+                // Read real-time data from the media session monitor first.
+                val nowPlaying = mediaSessionMonitor.nowPlaying.value
+                if (nowPlaying.title != null) {
+                    val artistText = if (nowPlaying.artist != null) " by ${nowPlaying.artist}" else ""
+                    val sourceText = nowPlaying.source?.let { " (${it.name.lowercase()})" } ?: ""
+                    val statusText = if (nowPlaying.isPlaying) "Now playing" else "Paused"
+                    "$statusText: ${nowPlaying.title}$artistText$sourceText"
+                } else {
+                    // Fall back to the persisted queue.
+                    val currentItem = try {
+                        mediaQueueRepository.getCurrentItem()
+                    } catch (e: Exception) {
+                        null
+                    }
+                    if (currentItem != null) {
+                        val artistText = if (currentItem.artist != null) " by ${currentItem.artist}" else ""
+                        "In queue: ${currentItem.title}$artistText (${currentItem.source.name.lowercase()})"
+                    } else {
+                        "Nothing is currently playing."
+                    }
+                }
+            }
+
+            MediaAction.QUEUE -> {
+                // Queue action is descriptive -- the actual enqueue is done through
+                // the UI layer or a separate search + enqueue flow.
+                describeAction(command)
+            }
+
+            MediaAction.SEARCH -> {
+                describeAction(command)
+            }
         }
     }
 
@@ -255,7 +327,7 @@ Do not use markdown. Do not add any preamble."""
     private fun parseWithKeywords(input: String): MediaCommand {
         val lowered = input.lowercase()
 
-        // Detect action — order matters
+        // Detect action -- order matters
         val action = when {
             WHAT_PLAYING_KEYWORDS.any { lowered.contains(it) } -> MediaAction.WHAT_IS_PLAYING
             PAUSE_KEYWORDS.any { lowered.contains(it) } -> MediaAction.PAUSE

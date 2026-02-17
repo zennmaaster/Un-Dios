@@ -1,5 +1,6 @@
 package com.castor.feature.notifications
 
+import android.app.Notification
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
@@ -21,6 +22,31 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
+
+/**
+ * Callback interface for urgent notification events.
+ *
+ * This provides a decoupled bridge between the `:feature:notifications` module
+ * (which has no dependency on `:agent:orchestrator`) and the agent event bus.
+ * The [AgentService] (in `:agent:orchestrator`) registers itself as the callback
+ * when it starts, and clears it when it stops. This avoids a circular dependency
+ * between modules.
+ *
+ * An "urgent" message is a direct message (no group) from WhatsApp or Teams that
+ * has high system priority, or any message from a monitored messaging app with
+ * [Notification.PRIORITY_HIGH] or above.
+ */
+interface NotificationEventCallback {
+
+    /**
+     * Called when an urgent message is detected from a monitored messaging app.
+     *
+     * @param sender The display name of the message sender.
+     * @param content The message body text.
+     * @param source The originating app identifier (e.g., "whatsapp", "teams").
+     */
+    fun onUrgentMessage(sender: String, content: String, source: String)
+}
 
 /**
  * Listens for incoming notifications from monitored messaging apps (WhatsApp, Teams), parses
@@ -48,6 +74,34 @@ class CastorNotificationListener : NotificationListenerService() {
         @Volatile
         var instance: CastorNotificationListener? = null
             private set
+
+        /**
+         * Optional callback for urgent notification events.
+         *
+         * The [AgentService] registers itself here on startup so that urgent messages
+         * are forwarded to the agent event bus without introducing a direct module
+         * dependency from `:feature:notifications` to `:agent:orchestrator`.
+         */
+        @Volatile
+        private var notificationEventCallback: NotificationEventCallback? = null
+
+        /**
+         * Register a callback to receive urgent notification events.
+         * Typically called by [AgentService.onCreate].
+         */
+        fun setNotificationEventCallback(callback: NotificationEventCallback) {
+            notificationEventCallback = callback
+            Log.i(TAG, "NotificationEventCallback registered")
+        }
+
+        /**
+         * Clear the notification event callback.
+         * Typically called by [AgentService.onDestroy].
+         */
+        fun clearNotificationEventCallback() {
+            notificationEventCallback = null
+            Log.i(TAG, "NotificationEventCallback cleared")
+        }
     }
 
     @Inject lateinit var messageRepository: MessageRepository
@@ -201,6 +255,10 @@ class CastorNotificationListener : NotificationListenerService() {
                 Log.e(TAG, "Failed to persist message from key=${sbn.key}", e)
             }
         }
+
+        // Notify the agent event bus if this is an urgent message.
+        // Urgent = direct message (no group) OR high-priority system notification.
+        tryNotifyUrgentMessage(sbn, parsed, source)
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
@@ -282,5 +340,41 @@ class CastorNotificationListener : NotificationListenerService() {
         result = 31 * result + parsed.content.hashCode()
         result = 31 * result + (parsed.groupName?.hashCode() ?: 0)
         return result
+    }
+
+    /**
+     * Evaluates whether a parsed notification qualifies as "urgent" and, if so,
+     * forwards it to the registered [NotificationEventCallback].
+     *
+     * A message is considered urgent when:
+     * - It is a direct message (no group name), OR
+     * - The system notification has [Notification.PRIORITY_HIGH] or above.
+     *
+     * This provides the bridge between the notification listener and the agent
+     * event bus without a direct module dependency.
+     */
+    private fun tryNotifyUrgentMessage(
+        sbn: StatusBarNotification,
+        parsed: ParsedNotification,
+        source: MessageSource
+    ) {
+        val callback = notificationEventCallback ?: return
+
+        val isDirectMessage = parsed.groupName == null
+        @Suppress("DEPRECATION")
+        val isHighPriority = sbn.notification.priority >= Notification.PRIORITY_HIGH
+
+        if (isDirectMessage || isHighPriority) {
+            try {
+                callback.onUrgentMessage(
+                    sender = parsed.sender,
+                    content = parsed.content,
+                    source = source.name.lowercase()
+                )
+                Log.d(TAG, "Urgent message forwarded to agent bus: sender=${parsed.sender}, source=${source.name}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to forward urgent message to agent bus", e)
+            }
+        }
     }
 }

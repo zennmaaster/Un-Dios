@@ -88,16 +88,17 @@ import java.util.Locale
  * The main home screen of Castor, styled as an Ubuntu/Linux desktop environment.
  *
  * Layout structure (top to bottom):
- * 1. SystemStatusBar -- persistent dark panel with system stats (CPU, RAM, battery, time)
+ * 1. SystemStatusBar -- persistent dark panel with system stats (CPU, RAM, battery, time, agent health)
  * 2. Main workspace area -- scrollable content with pull-to-refresh containing:
  *    a. CastorTerminal (via CommandBar) -- expanded by default, ~40% of screen
  *    b. WeatherCard -- full-width weather display (spans 2 columns)
  *    c. BriefingCard -- full-width briefing with real data (spans 2 columns)
- *    d. CalendarCard -- today's agenda from CalendarContract (spans 2 columns)
- *    e. SuggestionsRow -- context-aware horizontal suggestion chips (spans 2 columns)
- *    f. Agent cards -- 2-column grid (Messages, Media, Reminders, AI)
+ *    d. ProactiveInsightsCard -- real-time agent insights feed (spans 2 columns)
+ *    e. CalendarCard -- today's agenda from CalendarContract (spans 2 columns)
+ *    f. SuggestionsRow -- context-aware horizontal suggestion chips (spans 2 columns)
+ *    g. Agent cards -- 2-column grid (Messages, Media, Reminders, AI)
  *       each showing live status info
- *    g. Last synced timestamp footer
+ *    h. Last synced timestamp footer
  * 3. QuickLaunchBar -- Ubuntu-style dock at the bottom
  * 4. FloatingActionButton -- quick-add reminder ($ +), positioned above the dock
  * 5. QuickAddReminderSheet -- modal bottom sheet for creating reminders
@@ -133,7 +134,8 @@ fun HomeScreen(
     systemStatsViewModel: SystemStatsViewModel = hiltViewModel(),
     lockScreenViewModel: LockScreenViewModel = hiltViewModel(),
     briefingViewModel: BriefingViewModel = hiltViewModel(),
-    calendarViewModel: CalendarViewModel = hiltViewModel()
+    calendarViewModel: CalendarViewModel = hiltViewModel(),
+    insightsViewModel: ProactiveInsightsViewModel = hiltViewModel()
 ) {
     val commandBarState by viewModel.uiState.collectAsState()
 
@@ -175,6 +177,9 @@ fun HomeScreen(
     val unreadMessages by briefingViewModel.unreadMessages.collectAsState()
     val quickStatus by briefingViewModel.quickStatus.collectAsState()
     val timeOfDay = briefingViewModel.getTimeOfDay()
+
+    // Proactive insights state from ProactiveInsightsViewModel
+    val proactiveInsights by insightsViewModel.insights.collectAsState()
 
     // Biometric authentication wiring
     val context = LocalContext.current
@@ -333,6 +338,29 @@ fun HomeScreen(
                                 onViewMessages = onNavigateToMessages,
                                 onViewReminders = onNavigateToReminders,
                                 onViewNotifications = onNavigateToNotificationCenter,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        // ---- Proactive insights card: spans full width, live agent feed ----
+                        item(span = { GridItemSpan(2) }) {
+                            ProactiveInsightsCard(
+                                insights = proactiveInsights,
+                                onDismissInsight = { id -> insightsViewModel.dismissInsight(id) },
+                                onClearAll = { insightsViewModel.clearAll() },
+                                onActionClick = { route ->
+                                    when (route) {
+                                        "messages" -> onNavigateToMessages()
+                                        "media" -> onNavigateToMedia()
+                                        "reminders" -> onNavigateToReminders()
+                                        "notification_center" -> onNavigateToNotificationCenter()
+                                        "contacts" -> onNavigateToContacts()
+                                        "settings" -> onNavigateToSettings()
+                                        "weather" -> onNavigateToWeather()
+                                        "notes" -> onNavigateToNotes()
+                                        else -> onNavigateToRoute(route)
+                                    }
+                                },
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }

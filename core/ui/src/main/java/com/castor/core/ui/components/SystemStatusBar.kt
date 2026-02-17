@@ -1,7 +1,11 @@
 package com.castor.core.ui.components
 
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -14,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryChargingFull
@@ -27,8 +32,12 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -39,8 +48,22 @@ import androidx.compose.ui.unit.sp
 import com.castor.core.ui.theme.TerminalColors
 
 /**
+ * Health status of the agent subsystem.
+ *
+ * Used by [SystemStatusBar] to show a color-coded dot indicator:
+ * - [HEALTHY] (green): all agents are running normally
+ * - [DEGRADED] (yellow): some agents have non-critical errors
+ * - [CRITICAL] (red): a critical agent failure has occurred
+ */
+enum class AgentHealthStatus { HEALTHY, DEGRADED, CRITICAL }
+
+/**
  * Real-time system statistics data displayed in the status bar.
  * In production, this will be populated by a ViewModel reading actual system info.
+ *
+ * @param agentHealth Overall health of the agent subsystem.
+ * @param activeAgentCount Number of agents currently active/running.
+ * @param loadedModelCount Number of on-device models currently loaded.
  */
 data class SystemStats(
     val cpuUsage: Float = 0f,
@@ -52,7 +75,10 @@ data class SystemStats(
     val wifiConnected: Boolean = false,
     val bluetoothConnected: Boolean = false,
     val unreadNotifications: Int = 0,
-    val currentTime: String = ""
+    val currentTime: String = "",
+    val agentHealth: AgentHealthStatus = AgentHealthStatus.HEALTHY,
+    val activeAgentCount: Int = 4,
+    val loadedModelCount: Int = 1
 )
 
 /**
@@ -135,6 +161,17 @@ fun SystemStatusBar(
                 contentDescription = "Bluetooth",
                 tint = if (stats.bluetoothConnected) TerminalColors.Info else TerminalColors.Subtext,
                 modifier = Modifier.size(14.dp)
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // Agent health indicator -- color-coded dot showing agentic surface status.
+            // Tapping toggles a brief tooltip with agent/model counts.
+            AgentHealthDot(
+                health = stats.agentHealth,
+                activeAgentCount = stats.activeAgentCount,
+                loadedModelCount = stats.loadedModelCount,
+                monoStyle = monoStyle
             )
 
             Spacer(modifier = Modifier.width(8.dp))
@@ -245,6 +282,83 @@ fun SystemStatusBar(
                 text = "${stats.batteryPercent}%",
                 style = dimStyle.copy(color = getBatteryColor(stats.batteryPercent))
             )
+        }
+    }
+}
+
+/**
+ * Agent health indicator dot with tap-to-reveal status tooltip.
+ *
+ * Displays a small color-coded circle:
+ * - Green dot: all agents healthy ([AgentHealthStatus.HEALTHY])
+ * - Yellow dot: some agents have errors ([AgentHealthStatus.DEGRADED])
+ * - Red dot (pulsing): critical agent failure ([AgentHealthStatus.CRITICAL])
+ *
+ * Tapping the dot toggles a compact inline tooltip showing:
+ * "N agents active, M models loaded"
+ */
+@Composable
+private fun AgentHealthDot(
+    health: AgentHealthStatus,
+    activeAgentCount: Int,
+    loadedModelCount: Int,
+    monoStyle: TextStyle
+) {
+    var showTooltip by remember { mutableStateOf(false) }
+
+    val dotColor = when (health) {
+        AgentHealthStatus.HEALTHY -> TerminalColors.Success
+        AgentHealthStatus.DEGRADED -> TerminalColors.Warning
+        AgentHealthStatus.CRITICAL -> TerminalColors.Error
+    }
+
+    // Pulse animation for critical status
+    val dotAlpha = if (health == AgentHealthStatus.CRITICAL) {
+        val infiniteTransition = rememberInfiniteTransition(label = "agentHealthPulse")
+        val alpha by infiniteTransition.animateFloat(
+            initialValue = 1f,
+            targetValue = 0.3f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(600, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "agentHealthPulseAlpha"
+        )
+        alpha
+    } else {
+        1f
+    }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        // The dot
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .alpha(dotAlpha)
+                .clip(CircleShape)
+                .background(dotColor)
+                .clickable { showTooltip = !showTooltip }
+        )
+
+        // Inline tooltip (expands to the right of the dot)
+        if (showTooltip) {
+            Spacer(modifier = Modifier.width(4.dp))
+            Box(
+                modifier = Modifier
+                    .background(
+                        TerminalColors.Surface,
+                        RoundedCornerShape(3.dp)
+                    )
+                    .padding(horizontal = 4.dp, vertical = 1.dp)
+            ) {
+                Text(
+                    text = "${activeAgentCount}ag ${loadedModelCount}mdl",
+                    style = monoStyle.copy(
+                        fontSize = 8.sp,
+                        color = dotColor
+                    )
+                )
+            }
         }
     }
 }

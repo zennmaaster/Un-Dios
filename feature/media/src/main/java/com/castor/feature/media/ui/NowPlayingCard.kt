@@ -211,13 +211,20 @@ private fun IdleContent() {
         )
         Spacer(modifier = Modifier.height(12.dp))
         Text(
-            text = "$ now-playing --status",
+            text = "$ mpd --status",
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
             fontSize = 14.sp,
             color = TerminalColors.Prompt
         )
         Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "-> stopped",
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+            color = TerminalColors.Subtext
+        )
+        Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = "No active media session detected.",
             fontFamily = FontFamily.Monospace,

@@ -33,7 +33,9 @@ class AgentOrchestrator @Inject constructor(
     private val reminderAgent: ReminderAgent,
     private val briefingAgent: BriefingAgent,
     private val taskPipeline: TaskPipeline,
-    private val conversationManager: ConversationManager
+    private val conversationManager: ConversationManager,
+    private val eventBus: AgentEventBus,
+    private val healthMonitor: AgentHealthMonitor
 ) {
 
     companion object {
@@ -156,6 +158,12 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
      * @return A natural language response suitable for displaying to the user.
      */
     suspend fun processInput(input: String): String {
+        // Handle system commands before recording conversation turns
+        val trimmedInput = input.trim()
+        if (trimmedInput.equals("/status", ignoreCase = true)) {
+            return healthMonitor.getStatusReport()
+        }
+
         // Record user turn
         conversationManager.addUserTurn(input)
 
@@ -170,6 +178,10 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
                 response = result.summary
                 agentType = if (result.steps.isNotEmpty()) result.steps.first().step.agentType else AgentType.GENERAL
                 intent = null
+                // Record heartbeat for each agent involved
+                result.steps.forEach { stepResult ->
+                    healthMonitor.recordHeartbeat(stepResult.step.agentType)
+                }
             } else {
                 // Step 2: Classify intent
                 intent = classifyIntent(input)
@@ -177,8 +189,19 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
 
                 // Step 3: Route to agent
                 response = routeIntent(intent, input)
+
+                // Record heartbeat for the agent that handled the request
+                healthMonitor.recordHeartbeat(agentType)
             }
         } catch (e: Exception) {
+            // Record the error for the agent that would have handled it
+            val failedAgentType = try {
+                intentToAgentType(classifyIntent(input))
+            } catch (_: Exception) {
+                AgentType.GENERAL
+            }
+            healthMonitor.recordError(failedAgentType, e.message ?: "Unknown error")
+
             // Fallback: generate a general response or return error message
             val fallbackResponse = try {
                 if (engine.isLoaded) {
@@ -200,6 +223,9 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
             trackCommand(input, null, AgentType.GENERAL, fallbackResponse)
             return fallbackResponse
         }
+
+        // Emit proactive insight for notable outputs
+        emitInsightIfNotable(agentType, response)
 
         // Record assistant response
         conversationManager.addAssistantTurn(response, agentType)
@@ -501,8 +527,10 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
     private suspend fun routeMessaging(intent: AgentIntent.SendMessage, input: String): String {
         return try {
             val composed = messagingAgent.composeMessage(input)
+            healthMonitor.recordHeartbeat(AgentType.MESSAGING)
             "Draft message for ${intent.recipient}: \"$composed\""
         } catch (e: Exception) {
+            healthMonitor.recordError(AgentType.MESSAGING, e.message ?: "Messaging error")
             "I'd like to help with that message, but encountered an error. Please try again."
         }
     }
@@ -512,8 +540,11 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
      */
     private suspend fun routePlayMedia(input: String): String {
         return try {
-            mediaAgent.handleCommand(input)
+            val result = mediaAgent.handleCommand(input)
+            healthMonitor.recordHeartbeat(AgentType.MEDIA)
+            result
         } catch (e: Exception) {
+            healthMonitor.recordError(AgentType.MEDIA, e.message ?: "Media error")
             "I'd like to play that for you, but encountered an error. Please try again."
         }
     }
@@ -526,8 +557,11 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
             val command = mediaAgent.parseMediaCommand(input)
             // Override action to QUEUE regardless of what was parsed
             val queueCommand = command.copy(action = MediaAction.QUEUE)
-            mediaAgent.describeAction(queueCommand)
+            val result = mediaAgent.describeAction(queueCommand)
+            healthMonitor.recordHeartbeat(AgentType.MEDIA)
+            result
         } catch (e: Exception) {
+            healthMonitor.recordError(AgentType.MEDIA, e.message ?: "Media queue error")
             "I'd like to add that to the queue, but encountered an error. Please try again."
         }
     }
@@ -537,8 +571,11 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
      */
     private suspend fun routeSetReminder(input: String): String {
         return try {
-            reminderAgent.handleReminder(input)
+            val result = reminderAgent.handleReminder(input)
+            healthMonitor.recordHeartbeat(AgentType.REMINDER)
+            result
         } catch (e: Exception) {
+            healthMonitor.recordError(AgentType.REMINDER, e.message ?: "Reminder error")
             "I'd like to set that reminder, but encountered an error. Please try again."
         }
     }
@@ -549,6 +586,7 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
     private suspend fun routeBriefing(): String {
         return try {
             val briefing = briefingAgent.generateMorningBriefing()
+            healthMonitor.recordHeartbeat(AgentType.GENERAL)
             buildString {
                 appendLine(briefing.greeting)
                 appendLine()
@@ -560,6 +598,7 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
                 }
             }.trim()
         } catch (e: Exception) {
+            healthMonitor.recordError(AgentType.GENERAL, e.message ?: "Briefing error")
             "I was unable to generate your briefing. Please try again."
         }
     }
@@ -570,7 +609,7 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
      */
     private suspend fun routeSummarize(input: String): String {
         return try {
-            if (engine.isLoaded) {
+            val result = if (engine.isLoaded) {
                 val context = conversationManager.buildContextPrompt(limit = 5)
                 val prompt = if (context.isNotBlank()) {
                     "$context\n\nUser request: $input"
@@ -587,7 +626,10 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
                 "I can help with summaries, but the language model is not currently loaded. " +
                 "Please load a model first."
             }
+            healthMonitor.recordHeartbeat(AgentType.MESSAGING)
+            result
         } catch (e: Exception) {
+            healthMonitor.recordError(AgentType.MESSAGING, e.message ?: "Summarize error")
             "I was unable to generate that summary. Please try again."
         }
     }
@@ -597,7 +639,7 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
      */
     private suspend fun routeGeneral(input: String): String {
         return try {
-            if (engine.isLoaded) {
+            val result = if (engine.isLoaded) {
                 val context = conversationManager.buildContextPrompt(limit = 5)
                 val prompt = if (context.isNotBlank()) {
                     "$context\n\nUser: $input"
@@ -613,8 +655,61 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
             } else {
                 MODEL_NOT_LOADED_MSG
             }
+            healthMonitor.recordHeartbeat(AgentType.GENERAL)
+            result
         } catch (e: Exception) {
+            healthMonitor.recordError(AgentType.GENERAL, e.message ?: "General query error")
             GENERAL_ERROR_MSG
+        }
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Proactive insights
+    // -------------------------------------------------------------------------------------
+
+    /**
+     * Emit a [AgentEvent.ProactiveInsight] for agent responses that carry notable
+     * information the user may want surfaced on the home screen.
+     *
+     * Heuristic: if the response mentions a reminder being set, a message being sent,
+     * or a briefing being generated, emit a medium-priority insight.
+     */
+    private suspend fun emitInsightIfNotable(agentType: AgentType, response: String) {
+        val insight: String? = when (agentType) {
+            AgentType.MESSAGING -> {
+                if (response.startsWith("Draft message", ignoreCase = true)) {
+                    "Message drafted. Review and send when ready."
+                } else {
+                    null
+                }
+            }
+            AgentType.REMINDER -> {
+                if (response.startsWith("Reminder set", ignoreCase = true)) {
+                    response.take(80)
+                } else {
+                    null
+                }
+            }
+            AgentType.MEDIA -> {
+                if (response.startsWith("Playing", ignoreCase = true) ||
+                    response.startsWith("Now playing", ignoreCase = true)
+                ) {
+                    response.take(80)
+                } else {
+                    null
+                }
+            }
+            else -> null
+        }
+
+        if (insight != null) {
+            eventBus.emit(
+                AgentEvent.ProactiveInsight(
+                    agentType = agentType,
+                    message = insight,
+                    priority = InsightPriority.MEDIUM
+                )
+            )
         }
     }
 

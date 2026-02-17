@@ -8,6 +8,7 @@ import com.castor.core.data.repository.MediaQueueRepository
 import com.castor.feature.media.queue.PlaybackOrchestrator
 import com.castor.feature.media.session.MediaSessionMonitor
 import com.castor.feature.media.session.NowPlayingState
+import com.castor.feature.media.session.UnifiedTransportControls
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -78,7 +79,8 @@ enum class MediaTab(val label: String) {
 class MediaViewModel @Inject constructor(
     private val orchestrator: PlaybackOrchestrator,
     private val queueRepository: MediaQueueRepository,
-    private val mediaSessionMonitor: MediaSessionMonitor
+    private val mediaSessionMonitor: MediaSessionMonitor,
+    private val transportControls: UnifiedTransportControls
 ) : ViewModel() {
 
     // -------------------------------------------------------------------------------------
@@ -158,27 +160,64 @@ class MediaViewModel @Inject constructor(
     )
 
     // -------------------------------------------------------------------------------------
-    // Playback controls — delegate to orchestrator
+    // Playback controls — delegate to orchestrator, fall back to transport controls
     // -------------------------------------------------------------------------------------
 
-    /** Toggle play / pause on the current item. */
+    /**
+     * Toggle play / pause. Uses the orchestrator when there is a queue item;
+     * falls back to [UnifiedTransportControls] to control whatever system media
+     * session is active when the queue is empty.
+     */
     fun onPlayPause() {
-        viewModelScope.launch { orchestrator.playPause() }
+        viewModelScope.launch {
+            if (uiState.value.currentItem != null) {
+                orchestrator.playPause()
+            } else {
+                transportControls.playPause()
+            }
+        }
     }
 
-    /** Skip to the next item in the queue (cross-source transition). */
+    /**
+     * Skip to the next item in the queue (cross-source transition).
+     * Falls back to [UnifiedTransportControls] when no queue item is present.
+     */
     fun onSkipNext() {
-        viewModelScope.launch { orchestrator.skipNext() }
+        viewModelScope.launch {
+            if (uiState.value.currentItem != null) {
+                orchestrator.skipNext()
+            } else {
+                transportControls.skipNext()
+            }
+        }
     }
 
-    /** Restart the current item (or seek to beginning). */
+    /**
+     * Restart the current item (or seek to beginning).
+     * Falls back to [UnifiedTransportControls] when no queue item is present.
+     */
     fun onSkipPrevious() {
-        viewModelScope.launch { orchestrator.skipPrevious() }
+        viewModelScope.launch {
+            if (uiState.value.currentItem != null) {
+                orchestrator.skipPrevious()
+            } else {
+                transportControls.skipPrevious()
+            }
+        }
     }
 
-    /** Seek to an absolute position in the current item. */
+    /**
+     * Seek to an absolute position in the current item.
+     * Falls back to [UnifiedTransportControls] when no queue item is present.
+     */
     fun onSeekTo(positionMs: Long) {
-        viewModelScope.launch { orchestrator.seekTo(positionMs) }
+        viewModelScope.launch {
+            if (uiState.value.currentItem != null) {
+                orchestrator.seekTo(positionMs)
+            } else {
+                transportControls.seekTo(positionMs)
+            }
+        }
     }
 
     // -------------------------------------------------------------------------------------

@@ -41,10 +41,17 @@ dependencies {
     implementation(project(":core:common"))
     implementation(project(":core:inference"))
     implementation(project(":core:data"))
+    implementation(project(":feature:media"))
 
     // Hilt
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+
+    // AndroidX Core
+    implementation(libs.androidx.core.ktx)
+
+    // Lifecycle (LifecycleService for AgentService)
+    implementation(libs.lifecycle.service)
 
     // Coroutines
     implementation(libs.coroutines.core)
