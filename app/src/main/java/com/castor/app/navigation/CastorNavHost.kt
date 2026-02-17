@@ -19,6 +19,7 @@ import com.castor.app.settings.BatteryOptimizationScreen
 import com.castor.app.settings.ThemeManager
 import com.castor.app.settings.ThemeSelectorScreen
 import com.castor.core.security.SecurePreferences
+import com.castor.app.habits.HabitTrackerScreen
 import com.castor.app.notes.NoteEditorScreen
 import com.castor.app.notes.NotesScreen
 import com.castor.app.onboarding.OnboardingPreferences
@@ -27,6 +28,7 @@ import com.castor.app.onboarding.onboardingDataStore
 import com.castor.app.ui.HomeScreen
 import com.castor.app.usage.UsageStatsScreen
 import com.castor.app.weather.WeatherDetailScreen
+import com.castor.app.focus.FocusTimerScreen
 import com.castor.feature.media.sync.ui.BookSyncScreen
 import com.castor.feature.media.ui.MediaScreen
 import com.castor.feature.messaging.contacts.ContactsScreen
@@ -69,6 +71,8 @@ import java.nio.charset.StandardCharsets
  * - "notes"        — quick notes / scratchpad (terminal-styled note list)
  * - "note_editor/{noteId}" — vim-styled note editor (-1 for new note)
  * - "weather"      — full weather detail screen (curl wttr.in --verbose)
+ * - "focus"        — Pomodoro focus timer with terminal-styled UI
+ * - "habits"       — habit tracker with terminal-styled completion tracking
  * - "settings"     — launcher settings (/etc/un-dios/config)
  * - "theme_selector" — terminal color theme picker (/etc/un-dios/themes.conf)
  * - "battery_optimization" — battery optimization guide (/etc/un-dios/battery-optimization.md)
@@ -134,6 +138,8 @@ fun CastorNavHost(
                 onNavigateToNotificationCenter = { navController.navigate("notification_center") },
                 onNavigateToNotes = { navController.navigate("notes") },
                 onNavigateToWeather = { navController.navigate("weather") },
+                onNavigateToFocus = { navController.navigate("focus") },
+                onNavigateToHabits = { navController.navigate("habits") },
                 onNavigateToRoute = { route -> navController.navigate(route) }
             )
         }
@@ -252,6 +258,18 @@ fun CastorNavHost(
 
         composable("weather") {
             WeatherDetailScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable("focus") {
+            FocusTimerScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable("habits") {
+            HabitTrackerScreen(
                 onBack = { navController.popBackStack() }
             )
         }

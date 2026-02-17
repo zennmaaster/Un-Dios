@@ -30,6 +30,18 @@
     <!-- Launcher: expand notification shade on swipe-down gesture -->
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
 
+    <!-- Quick Settings: Camera for flashlight control -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- Quick Settings: Bluetooth control (Android 12+) -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- Quick Settings: Write system settings (brightness, rotation) -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+
+    <!-- Voice Input: Record audio for speech recognition -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <application
         android:name=".CastorApplication"
         android:allowBackup="false"
@@ -96,6 +108,12 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
+
+        <!-- Focus Timer Foreground Service -->
+        <service
+            android:name=".focus.FocusTimerService"
+            android:foregroundServiceType="shortService"
+            android:exported="false" />
 
     </application>
 

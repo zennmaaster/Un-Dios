@@ -10,9 +10,11 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -34,6 +36,19 @@ import com.castor.core.ui.components.TerminalEntry
 import com.castor.core.ui.theme.TerminalColors
 
 /**
+ * Voice input state holder.
+ *
+ * @param isListening Whether voice recognition is currently active
+ * @param partialTranscript The partial transcript being recognized in real-time
+ * @param error Any error message from voice recognition
+ */
+data class VoiceInputState(
+    val isListening: Boolean = false,
+    val partialTranscript: String = "",
+    val error: String? = null
+)
+
+/**
  * State holder for the CommandBar / terminal interface.
  *
  * @param isProcessing Whether a command is currently being processed by the orchestrator
@@ -43,6 +58,7 @@ import com.castor.core.ui.theme.TerminalColors
  * @param isExpanded Whether the terminal is in full/expanded view or collapsed single-line view
  * @param autocompleteSuggestions Current autocomplete suggestions based on user input.
  *        Populated when the user types a `/` or `:` prefix and matches available commands.
+ * @param showVoiceOverlay Whether to show the full-screen voice input overlay
  */
 data class CommandBarState(
     val isProcessing: Boolean = false,
@@ -50,12 +66,13 @@ data class CommandBarState(
     val privacyTier: String = "Local",
     val commandHistory: List<TerminalEntry> = emptyList(),
     val isExpanded: Boolean = false,
-    val autocompleteSuggestions: List<BuiltInCommand> = emptyList()
+    val autocompleteSuggestions: List<BuiltInCommand> = emptyList(),
+    val showVoiceOverlay: Boolean = false
 )
 
 /**
  * The primary command interface for Castor -- a full terminal emulator wrapper
- * with built-in command autocompletion.
+ * with built-in command autocompletion and voice input.
  *
  * When collapsed, shows a single-line monospace input with the terminal prompt.
  * When expanded, shows the full command history scrollback and input line,
@@ -72,6 +89,10 @@ data class CommandBarState(
  * @param onSubmit Callback when the user submits a command
  * @param onToggleExpanded Callback to toggle between expanded and collapsed views
  * @param onInputChanged Callback when the input text changes (for autocomplete)
+ * @param voiceInputState Voice input state (isListening, partialTranscript, error)
+ * @param onStartVoiceInput Callback to start voice input
+ * @param onStopVoiceInput Callback to stop voice input
+ * @param onClearVoiceError Callback to clear voice error
  * @param modifier Modifier for the root composable
  */
 @Composable
@@ -80,44 +101,69 @@ fun CommandBar(
     onSubmit: (String) -> Unit,
     onToggleExpanded: () -> Unit,
     onInputChanged: (String) -> Unit = {},
+    voiceInputState: VoiceInputState = VoiceInputState(),
+    onStartVoiceInput: () -> Unit = {},
+    onStopVoiceInput: () -> Unit = {},
+    onClearVoiceError: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .animateContentSize(
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessLow
+    Box(modifier = modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .animateContentSize(
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessLow
+                    )
                 )
-            )
-    ) {
-        // Autocomplete dropdown -- shown when suggestions are available
-        AnimatedVisibility(
-            visible = state.autocompleteSuggestions.isNotEmpty(),
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
         ) {
-            AutocompleteDropdown(
-                suggestions = state.autocompleteSuggestions,
-                onSuggestionSelected = { command ->
-                    onSubmit(command.command)
+            // Autocomplete dropdown -- shown when suggestions are available
+            AnimatedVisibility(
+                visible = state.autocompleteSuggestions.isNotEmpty(),
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                AutocompleteDropdown(
+                    suggestions = state.autocompleteSuggestions,
+                    onSuggestionSelected = { command ->
+                        onSubmit(command.command)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            // Terminal
+            CastorTerminal(
+                commandHistory = state.commandHistory,
+                onSubmit = onSubmit,
+                isProcessing = state.isProcessing,
+                isExpanded = state.isExpanded,
+                onToggleExpanded = onToggleExpanded,
+                showTypingAnimation = true,
+                onInputChanged = onInputChanged,
+                voiceButton = {
+                    VoiceInputButton(
+                        isListening = voiceInputState.isListening,
+                        partialTranscript = voiceInputState.partialTranscript,
+                        error = voiceInputState.error,
+                        onStartListening = onStartVoiceInput,
+                        onStopListening = onStopVoiceInput,
+                        onClearError = onClearVoiceError
+                    )
                 },
                 modifier = Modifier.fillMaxWidth()
             )
         }
 
-        // Terminal
-        CastorTerminal(
-            commandHistory = state.commandHistory,
-            onSubmit = onSubmit,
-            isProcessing = state.isProcessing,
-            isExpanded = state.isExpanded,
-            onToggleExpanded = onToggleExpanded,
-            showTypingAnimation = true,
-            onInputChanged = onInputChanged,
-            modifier = Modifier.fillMaxWidth()
-        )
+        // Full-screen voice input overlay
+        if (state.showVoiceOverlay && voiceInputState.isListening) {
+            VoiceInputOverlay(
+                partialTranscript = voiceInputState.partialTranscript,
+                onCancel = onStopVoiceInput,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
     }
 }
 

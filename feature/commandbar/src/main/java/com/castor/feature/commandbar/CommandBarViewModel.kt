@@ -53,7 +53,8 @@ import javax.inject.Inject
 @HiltViewModel
 class CommandBarViewModel @Inject constructor(
     private val orchestrator: AgentOrchestrator,
-    private val engine: InferenceEngine
+    private val engine: InferenceEngine,
+    val voiceInputManager: VoiceInputManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CommandBarState())
@@ -166,6 +167,50 @@ class CommandBarViewModel @Inject constructor(
                 lastResponse = null
             )
         }
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Voice input handling
+    // -------------------------------------------------------------------------------------
+
+    /**
+     * Starts voice input recognition and shows the overlay.
+     * Collects the transcript when recognition completes and auto-submits the command.
+     */
+    fun startVoiceInput() {
+        // Show the overlay
+        _uiState.update { it.copy(showVoiceOverlay = true) }
+
+        // Start listening
+        voiceInputManager.startListening()
+
+        // Collect transcript and auto-submit
+        viewModelScope.launch {
+            voiceInputManager.transcript.collect { transcript ->
+                if (transcript.isNotEmpty()) {
+                    // Auto-submit the voice transcript
+                    onSubmit(transcript)
+                    // Hide overlay and stop listening
+                    _uiState.update { it.copy(showVoiceOverlay = false) }
+                    voiceInputManager.stopListening()
+                }
+            }
+        }
+    }
+
+    /**
+     * Stops voice input recognition and hides the overlay.
+     */
+    fun stopVoiceInput() {
+        voiceInputManager.stopListening()
+        _uiState.update { it.copy(showVoiceOverlay = false) }
+    }
+
+    /**
+     * Clears any voice input error.
+     */
+    fun clearVoiceError() {
+        voiceInputManager.clearError()
     }
 
     // -------------------------------------------------------------------------------------

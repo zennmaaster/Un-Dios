@@ -103,6 +103,8 @@ data class TerminalEntry(
  * @param isExpanded Whether the terminal is in expanded (full) or collapsed (single-line) mode
  * @param onToggleExpanded Callback to toggle expanded/collapsed state
  * @param showTypingAnimation Whether to show a character-by-character typing effect on the latest response
+ * @param onInputChanged Callback when input text changes
+ * @param voiceButton Optional composable for voice input button
  * @param modifier Modifier for the root composable
  */
 @Composable
@@ -114,6 +116,7 @@ fun CastorTerminal(
     onToggleExpanded: () -> Unit,
     showTypingAnimation: Boolean = false,
     onInputChanged: (String) -> Unit = {},
+    voiceButton: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val monoStyle = TextStyle(
@@ -165,6 +168,7 @@ fun CastorTerminal(
                     onInputChanged = onInputChanged,
                     isProcessing = isProcessing,
                     monoStyle = monoStyle,
+                    voiceButton = voiceButton,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -181,6 +185,7 @@ fun CastorTerminal(
                 onInputChanged = onInputChanged,
                 isProcessing = isProcessing,
                 monoStyle = monoStyle,
+                voiceButton = voiceButton,
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -622,6 +627,7 @@ private fun TerminalInputLine(
     onInputChanged: (String) -> Unit = {},
     isProcessing: Boolean,
     monoStyle: TextStyle,
+    voiceButton: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var inputText by remember { mutableStateOf("") }
@@ -742,6 +748,12 @@ private fun TerminalInputLine(
                         }
                 )
             }
+        }
+
+        // Voice input button
+        if (voiceButton != null) {
+            Spacer(modifier = Modifier.width(8.dp))
+            voiceButton()
         }
 
         // Processing spinner on the input line

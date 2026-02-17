@@ -5,6 +5,7 @@ import androidx.room.Room
 import com.castor.core.data.db.CastorDatabase
 import com.castor.core.data.db.dao.BookSyncDao
 import com.castor.core.data.db.dao.ConversationDao
+import com.castor.core.data.db.dao.HabitDao
 import com.castor.core.data.db.dao.MediaQueueDao
 import com.castor.core.data.db.dao.MessageDao
 import com.castor.core.data.db.dao.NoteDao
@@ -55,4 +56,5 @@ object DatabaseModule {
     @Provides fun provideBookSyncDao(db: CastorDatabase): BookSyncDao = db.bookSyncDao()
     @Provides fun provideNoteDao(db: CastorDatabase): NoteDao = db.noteDao()
     @Provides fun provideNotificationDao(db: CastorDatabase): NotificationDao = db.notificationDao()
+    @Provides fun provideHabitDao(db: CastorDatabase): HabitDao = db.habitDao()
 }

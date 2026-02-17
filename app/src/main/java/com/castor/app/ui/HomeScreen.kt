@@ -24,12 +24,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
@@ -45,6 +47,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import com.castor.app.quicksettings.QuickSettingsPanel
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
@@ -55,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.castor.app.habits.HabitCard
 import com.castor.app.launcher.AppDrawer
 import com.castor.app.launcher.DockManager
 import com.castor.app.launcher.GestureHandler
@@ -77,8 +81,10 @@ import com.castor.core.ui.theme.TerminalColors
 import com.castor.core.ui.theme.WhatsAppGreen
 import com.castor.app.search.UniversalSearchOverlay
 import com.castor.app.weather.WeatherCard
+import com.castor.app.focus.FocusTimerCard
 import com.castor.feature.commandbar.CommandBar
 import com.castor.feature.commandbar.CommandBarViewModel
+import com.castor.feature.commandbar.VoiceInputState
 import com.castor.feature.reminders.engine.ReminderScheduler
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -129,6 +135,8 @@ fun HomeScreen(
     onNavigateToNotificationCenter: () -> Unit = {},
     onNavigateToNotes: () -> Unit = {},
     onNavigateToWeather: () -> Unit = {},
+    onNavigateToFocus: () -> Unit = {},
+    onNavigateToHabits: () -> Unit = {},
     onNavigateToRoute: (String) -> Unit = {},
     viewModel: CommandBarViewModel = hiltViewModel(),
     systemStatsViewModel: SystemStatsViewModel = hiltViewModel(),
@@ -138,6 +146,16 @@ fun HomeScreen(
     insightsViewModel: ProactiveInsightsViewModel = hiltViewModel()
 ) {
     val commandBarState by viewModel.uiState.collectAsState()
+
+    // Voice input state
+    val isListening by viewModel.voiceInputManager.isListening.collectAsState()
+    val partialTranscript by viewModel.voiceInputManager.partialTranscript.collectAsState()
+    val voiceError by viewModel.voiceInputManager.error.collectAsState()
+    val voiceInputState = VoiceInputState(
+        isListening = isListening,
+        partialTranscript = partialTranscript,
+        error = voiceError
+    )
 
     // App drawer visibility state -- survives recomposition but not process death
     var isAppDrawerVisible by rememberSaveable { mutableStateOf(false) }
@@ -150,6 +168,9 @@ fun HomeScreen(
 
     // Quick-add reminder bottom sheet visibility state
     var isQuickAddReminderVisible by rememberSaveable { mutableStateOf(false) }
+
+    // Quick settings panel visibility state
+    var isQuickSettingsVisible by rememberSaveable { mutableStateOf(false) }
 
     // Real-time system stats from SystemStatsProvider (CPU, RAM, battery, WiFi, BT, time, etc.)
     val systemStats by systemStatsViewModel.stats.collectAsState()
@@ -237,6 +258,8 @@ fun HomeScreen(
                 route == "reminders" -> onNavigateToReminders()
                 route == "notes" -> onNavigateToNotes()
                 route == "weather" -> onNavigateToWeather()
+                route == "focus" -> onNavigateToFocus()
+                route == "habits" -> onNavigateToHabits()
                 route == "contacts" -> onNavigateToContacts()
                 route == "notification_center" -> onNavigateToNotificationCenter()
                 route == "usage_stats" -> onNavigateToUsageStats()
@@ -279,7 +302,7 @@ fun HomeScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .statusBarsPadding()
-                        .clickable(onClick = onNavigateToUsageStats)
+                        .clickable(onClick = { isQuickSettingsVisible = true })
                 )
 
                 // ============================================================
@@ -306,6 +329,10 @@ fun HomeScreen(
                                 onSubmit = viewModel::onSubmit,
                                 onToggleExpanded = viewModel::toggleExpanded,
                                 onInputChanged = viewModel::onInputChanged,
+                                voiceInputState = voiceInputState,
+                                onStartVoiceInput = viewModel::startVoiceInput,
+                                onStopVoiceInput = viewModel::stopVoiceInput,
+                                onClearVoiceError = viewModel::clearVoiceError,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -322,6 +349,14 @@ fun HomeScreen(
                         item(span = { GridItemSpan(2) }) {
                             WeatherCard(
                                 onClick = onNavigateToWeather,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        // ---- Focus Timer card: spans full width, Pomodoro timer status ----
+                        item(span = { GridItemSpan(2) }) {
+                            FocusTimerCard(
+                                onClick = onNavigateToFocus,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -522,6 +557,19 @@ fun HomeScreen(
                             }
                         }
 
+                        // ---- Habits card ----
+                        item {
+                            AgentCard(
+                                title = "Habits",
+                                subtitle = "Daily tracking",
+                                icon = Icons.Default.CheckCircle,
+                                accentColor = TerminalColors.Success,
+                                onClick = onNavigateToHabits
+                            ) {
+                                HabitCard()
+                            }
+                        }
+
                         // ---- Last synced timestamp footer ----
                         item(span = { GridItemSpan(2) }) {
                             LastSyncedFooter(lastUpdatedMs = lastUpdated)
@@ -638,6 +686,14 @@ fun HomeScreen(
                 isSearchVisible = false
                 isAppDrawerVisible = true
             }
+        )
+
+        // ====================================================================
+        // Layer 3.5: Quick Settings Panel
+        // ====================================================================
+        QuickSettingsPanel(
+            isVisible = isQuickSettingsVisible,
+            onDismiss = { isQuickSettingsVisible = false }
         )
 
         // ====================================================================
