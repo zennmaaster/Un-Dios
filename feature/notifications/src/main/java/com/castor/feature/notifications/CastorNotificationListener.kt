@@ -7,6 +7,7 @@ import com.castor.core.common.model.BookNotificationCallback
 import com.castor.core.common.model.CastorMessage
 import com.castor.core.common.model.MediaNotificationCallback
 import com.castor.core.common.model.MessageSource
+import com.castor.core.common.model.NotificationCountCallback
 import com.castor.core.data.repository.MessageRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -54,6 +55,7 @@ class CastorNotificationListener : NotificationListenerService() {
     @Inject lateinit var replyManager: ReplyManager
     @Inject lateinit var mediaNotificationCallback: MediaNotificationCallback
     @Inject lateinit var bookNotificationCallback: BookNotificationCallback
+    @Inject lateinit var notificationCountCallback: NotificationCountCallback
 
     /** Coroutine scope tied to this service's lifecycle. Cancelled in [onListenerDisconnected]. */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -100,7 +102,15 @@ class CastorNotificationListener : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
         instance = this
-        Log.i(TAG, "Notification listener connected")
+
+        // Set the initial notification count from all currently active notifications.
+        try {
+            val activeCount = activeNotifications?.size ?: 0
+            notificationCountCallback.updateCount(activeCount)
+            Log.i(TAG, "Notification listener connected, active notifications: $activeCount")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to read initial notification count", e)
+        }
     }
 
     override fun onListenerDisconnected() {
@@ -109,6 +119,7 @@ class CastorNotificationListener : NotificationListenerService() {
         replyManager.clearAll()
         lastContentHashByKey.clear()
         keyToSource.clear()
+        notificationCountCallback.updateCount(0)
         scope.cancel()
         Log.i(TAG, "Notification listener disconnected")
     }
@@ -118,6 +129,9 @@ class CastorNotificationListener : NotificationListenerService() {
     // -------------------------------------------------------------------------------------
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
+        // Update the global notification count for the status bar.
+        notificationCountCallback.increment()
+
         // Forward media notifications to the recommendation tracking pipeline.
         if (sbn.packageName in monitoredMediaPackages) {
             try {
@@ -190,6 +204,9 @@ class CastorNotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        // Update the global notification count for the status bar.
+        notificationCountCallback.decrement()
+
         // Forward media notification removal to the recommendation tracking pipeline.
         if (sbn.packageName in monitoredMediaPackages) {
             try {

@@ -1,13 +1,19 @@
 package com.castor.app.system
 
+import android.annotation.SuppressLint
 import android.app.ActivityManager
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.BatteryManager
+import android.os.Build
 import androidx.core.content.getSystemService
+import com.castor.core.ui.components.SystemStats
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,25 +30,32 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Real-time system statistics for the Ubuntu-style status bar.
+ * Real-time system statistics provider for the Ubuntu-style status bar.
  *
- * Reads CPU usage from /proc/stat, RAM from ActivityManager,
- * battery from BatteryManager, and WiFi connectivity from ConnectivityManager.
- * Emits updated [SystemStats] every 2 seconds while monitoring is active.
+ * Reads live data from multiple Android system APIs:
+ * - **CPU usage** from `/proc/stat` (delta between two consecutive reads)
+ * - **RAM** from [ActivityManager.MemoryInfo]
+ * - **Battery** from the sticky `ACTION_BATTERY_CHANGED` broadcast
+ * - **WiFi** from [ConnectivityManager] network capabilities
+ * - **Bluetooth** from [BluetoothAdapter] bonded device connection profiles
+ * - **Notification count** from [NotificationCountHolder] (fed by CastorNotificationListener)
+ * - **Current time** formatted as Ubuntu-style date/time string
  *
- * Provided as a singleton via [com.castor.app.di.AppModule].
+ * Emits updated [SystemStats] every [UPDATE_INTERVAL_MS] milliseconds while monitoring
+ * is active. Provided as a singleton via [com.castor.app.di.AppModule].
  */
 class SystemStatsProvider(
-    private val context: Context
+    private val context: Context,
+    private val notificationCountHolder: NotificationCountHolder
 ) {
 
     companion object {
-        private const val UPDATE_INTERVAL_MS = 2000L
+        private const val UPDATE_INTERVAL_MS = 3000L
         private const val TIME_FORMAT = "EEE MMM d  HH:mm"
     }
 
-    private val _systemStats = MutableStateFlow(SystemStats())
-    val systemStats: StateFlow<SystemStats> = _systemStats.asStateFlow()
+    private val _stats = MutableStateFlow(SystemStats())
+    val stats: StateFlow<SystemStats> = _stats.asStateFlow()
 
     private var monitoringScope: CoroutineScope? = null
 
@@ -52,46 +65,51 @@ class SystemStatsProvider(
 
     /**
      * Start periodic monitoring of system statistics.
-     * Stats are emitted to [systemStats] every 2 seconds.
-     * Safe to call multiple times — restarts if already running.
+     * Stats are emitted to [stats] every [UPDATE_INTERVAL_MS] milliseconds.
+     * Safe to call multiple times -- restarts if already running.
      */
     fun startMonitoring() {
-        // Avoid duplicate monitoring loops
         stopMonitoring()
 
         val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
         monitoringScope = scope
 
         scope.launch {
-            // Initial CPU reading to establish a baseline
+            // Take an initial CPU reading to establish a baseline for delta calculation.
             readCpuRaw()
 
             while (isActive) {
-                val stats = collectStats()
-                _systemStats.value = stats
+                val snapshot = collectStats()
+                _stats.value = snapshot
                 delay(UPDATE_INTERVAL_MS)
             }
         }
     }
 
     /**
-     * Stop monitoring and release resources.
+     * Stop monitoring and release coroutine resources.
      */
     fun stopMonitoring() {
         monitoringScope?.cancel()
         monitoringScope = null
     }
 
+    // -----------------------------------------------------------------------------------------
+    // Stats collection
+    // -----------------------------------------------------------------------------------------
+
     /**
      * Collect all system stats into a single [SystemStats] snapshot.
      */
     private fun collectStats(): SystemStats {
-        val cpuUsage = getCpuUsage()
-        val (ramUsedMb, ramTotalMb) = getMemoryInfo()
+        val cpuUsage = readCpuUsage()
+        val (ramUsedMb, ramTotalMb) = readRamUsage()
         val ramUsage = if (ramTotalMb > 0) (ramUsedMb.toFloat() / ramTotalMb.toFloat()) * 100f else 0f
-        val (batteryPercent, isCharging) = getBatteryInfo()
+        val (batteryPercent, isCharging) = readBattery()
         val wifiConnected = isWifiConnected()
+        val bluetoothConnected = isBluetoothConnected()
         val currentTime = getCurrentTime()
+        val unreadNotifications = getUnreadNotificationCount()
 
         return SystemStats(
             cpuUsage = cpuUsage,
@@ -101,20 +119,28 @@ class SystemStatsProvider(
             batteryPercent = batteryPercent,
             isCharging = isCharging,
             wifiConnected = wifiConnected,
+            bluetoothConnected = bluetoothConnected,
+            unreadNotifications = unreadNotifications,
             currentTime = currentTime
         )
     }
 
+    // -----------------------------------------------------------------------------------------
+    // CPU
+    // -----------------------------------------------------------------------------------------
+
     /**
-     * Read CPU usage by parsing /proc/stat and computing the delta of idle vs total time
+     * Read CPU usage by parsing `/proc/stat` and computing the delta of idle vs. total time
      * between two consecutive readings.
      *
-     * The first line of /proc/stat looks like:
+     * The first line of `/proc/stat` looks like:
+     * ```
      * cpu  user nice system idle iowait irq softirq steal guest guest_nice
+     * ```
      *
      * @return CPU usage as a percentage (0.0 to 100.0).
      */
-    private fun getCpuUsage(): Float {
+    private fun readCpuUsage(): Float {
         return try {
             val (idle, total) = readCpuRaw()
 
@@ -129,13 +155,13 @@ class SystemStatsProvider(
             } else {
                 ((totalDelta - idleDelta).toFloat() / totalDelta.toFloat()) * 100f
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             0f
         }
     }
 
     /**
-     * Read raw CPU counters from /proc/stat.
+     * Read raw CPU tick counters from `/proc/stat`.
      *
      * @return Pair of (idle ticks, total ticks).
      */
@@ -146,24 +172,26 @@ class SystemStatsProvider(
 
         // Example: "cpu  4705 356 584 3699 23 23 0 0 0 0"
         val parts = line.split(Regex("\\s+"))
-        // parts[0] = "cpu", parts[1..] = user, nice, system, idle, iowait, irq, softirq, steal, ...
-
         if (parts.size < 5) return Pair(0L, 0L)
 
         val values = parts.drop(1).mapNotNull { it.toLongOrNull() }
         val total = values.sum()
-        // idle is at index 3 (4th value after "cpu"), iowait at index 4
+        // idle is at index 3, iowait at index 4
         val idle = values.getOrElse(3) { 0L } + values.getOrElse(4) { 0L }
 
         return Pair(idle, total)
     }
 
+    // -----------------------------------------------------------------------------------------
+    // RAM
+    // -----------------------------------------------------------------------------------------
+
     /**
-     * Read memory information from ActivityManager.
+     * Read memory usage via [ActivityManager.MemoryInfo].
      *
      * @return Pair of (used MB, total MB).
      */
-    private fun getMemoryInfo(): Pair<Long, Long> {
+    private fun readRamUsage(): Pair<Long, Long> {
         return try {
             val activityManager = context.getSystemService<ActivityManager>()
                 ?: return Pair(0L, 0L)
@@ -176,17 +204,21 @@ class SystemStatsProvider(
             val usedMb = totalMb - availMb
 
             Pair(usedMb, totalMb)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Pair(0L, 0L)
         }
     }
 
+    // -----------------------------------------------------------------------------------------
+    // Battery
+    // -----------------------------------------------------------------------------------------
+
     /**
-     * Read battery level and charging status using a sticky broadcast.
+     * Read battery level and charging status using the sticky `ACTION_BATTERY_CHANGED` broadcast.
      *
      * @return Pair of (battery percent 0-100, isCharging).
      */
-    private fun getBatteryInfo(): Pair<Int, Boolean> {
+    private fun readBattery(): Pair<Int, Boolean> {
         return try {
             val batteryIntent = context.registerReceiver(
                 null,
@@ -207,15 +239,19 @@ class SystemStatsProvider(
                     status == BatteryManager.BATTERY_STATUS_FULL
 
             Pair(percent, isCharging)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Pair(0, false)
         }
     }
 
+    // -----------------------------------------------------------------------------------------
+    // WiFi
+    // -----------------------------------------------------------------------------------------
+
     /**
      * Check whether the device is connected to a WiFi network.
      *
-     * @return true if WiFi is the active transport.
+     * @return `true` if WiFi is the active transport.
      */
     private fun isWifiConnected(): Boolean {
         return try {
@@ -227,10 +263,73 @@ class SystemStatsProvider(
                 ?: return false
 
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             false
         }
     }
+
+    // -----------------------------------------------------------------------------------------
+    // Bluetooth
+    // -----------------------------------------------------------------------------------------
+
+    /**
+     * Check whether any bonded Bluetooth device is currently connected.
+     *
+     * Uses [BluetoothManager] to get the adapter and checks common Bluetooth profiles
+     * (A2DP, headset, health device) for connected devices among the bonded set.
+     *
+     * Gracefully returns `false` if:
+     * - The device has no Bluetooth hardware
+     * - Bluetooth permission is not granted (Android 12+)
+     * - Bluetooth is disabled
+     *
+     * @return `true` if at least one bonded device is connected.
+     */
+    @SuppressLint("MissingPermission")
+    private fun isBluetoothConnected(): Boolean {
+        return try {
+            // Check for BLUETOOTH_CONNECT permission on Android 12+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val hasPermission = context.checkSelfPermission(
+                    android.Manifest.permission.BLUETOOTH_CONNECT
+                ) == PackageManager.PERMISSION_GRANTED
+                if (!hasPermission) return false
+            }
+
+            val bluetoothManager = context.getSystemService<BluetoothManager>()
+                ?: return false
+            val adapter = bluetoothManager.adapter ?: return false
+
+            if (!adapter.isEnabled) return false
+
+            // Check if any bonded device is currently connected via common profiles.
+            // BluetoothDevice.isConnected is a hidden but accessible method via reflection,
+            // but checking connected devices on specific profiles is more reliable.
+            // We check the profiles that are most commonly used.
+            val profilesToCheck = listOf(
+                BluetoothProfile.HEADSET,
+                BluetoothProfile.A2DP
+            )
+
+            // Quick check: iterate bonded devices and use the profile proxy connection state
+            val bondedDevices = adapter.bondedDevices ?: return false
+            for (device in bondedDevices) {
+                for (profile in profilesToCheck) {
+                    if (adapter.getProfileConnectionState(profile) == BluetoothProfile.STATE_CONNECTED) {
+                        return true
+                    }
+                }
+            }
+
+            false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Time
+    // -----------------------------------------------------------------------------------------
 
     /**
      * Format the current time in Ubuntu-style format.
@@ -240,32 +339,23 @@ class SystemStatsProvider(
         return try {
             val formatter = SimpleDateFormat(TIME_FORMAT, Locale.getDefault())
             formatter.format(Date())
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             ""
         }
     }
-}
 
-/**
- * Snapshot of system statistics displayed in the Ubuntu-style status bar.
- */
-data class SystemStats(
-    /** CPU usage as a percentage (0.0 to 100.0). */
-    val cpuUsage: Float = 0f,
-    /** RAM usage as a percentage (0.0 to 100.0). */
-    val ramUsage: Float = 0f,
-    /** RAM currently in use, in megabytes. */
-    val ramUsedMb: Long = 0,
-    /** Total device RAM, in megabytes. */
-    val ramTotalMb: Long = 0,
-    /** Battery level as a percentage (0 to 100). */
-    val batteryPercent: Int = 0,
-    /** Whether the device is currently charging. */
-    val isCharging: Boolean = false,
-    /** Whether the device is connected to WiFi. */
-    val wifiConnected: Boolean = false,
-    /** Number of unread notifications (populated externally). */
-    val unreadNotifications: Int = 0,
-    /** Formatted current time string. */
-    val currentTime: String = ""
-)
+    // -----------------------------------------------------------------------------------------
+    // Notifications
+    // -----------------------------------------------------------------------------------------
+
+    /**
+     * Read the current unread notification count from the shared [NotificationCountHolder].
+     *
+     * This value is updated by [CastorNotificationListener] as notifications arrive and depart.
+     *
+     * @return The current count of active notifications.
+     */
+    private fun getUnreadNotificationCount(): Int {
+        return notificationCountHolder.count.value
+    }
+}

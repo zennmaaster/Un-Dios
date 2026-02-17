@@ -1,7 +1,9 @@
 package com.castor.app.di
 
 import android.content.Context
+import com.castor.app.system.NotificationCountHolder
 import com.castor.app.system.SystemStatsProvider
+import com.castor.core.common.model.NotificationCountCallback
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -20,6 +22,33 @@ import javax.inject.Singleton
 object AppModule {
 
     /**
+     * Provide the [NotificationCountHolder] singleton.
+     *
+     * Shared between [SystemStatsProvider] (reads the count) and
+     * [CastorNotificationListener] (writes the count via the [NotificationCountCallback] binding).
+     */
+    @Provides
+    @Singleton
+    fun provideNotificationCountHolder(): NotificationCountHolder {
+        return NotificationCountHolder()
+    }
+
+    /**
+     * Bind [NotificationCountCallback] to [NotificationCountHolder].
+     *
+     * This allows `:feature:notifications` (which depends on `:core:common` but not `:app`)
+     * to inject the callback interface and update notification counts without knowing
+     * about the concrete holder implementation.
+     */
+    @Provides
+    @Singleton
+    fun provideNotificationCountCallback(
+        holder: NotificationCountHolder
+    ): NotificationCountCallback {
+        return holder
+    }
+
+    /**
      * Provide the [SystemStatsProvider] singleton.
      *
      * This is provided explicitly via @Provides rather than constructor injection
@@ -29,8 +58,9 @@ object AppModule {
     @Provides
     @Singleton
     fun provideSystemStatsProvider(
-        @ApplicationContext context: Context
+        @ApplicationContext context: Context,
+        notificationCountHolder: NotificationCountHolder
     ): SystemStatsProvider {
-        return SystemStatsProvider(context)
+        return SystemStatsProvider(context, notificationCountHolder)
     }
 }

@@ -86,6 +86,9 @@ dependencies {
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
 
+    // DataStore
+    implementation(libs.datastore.preferences)
+
     // Image loading
     implementation(libs.coil.compose)
 }

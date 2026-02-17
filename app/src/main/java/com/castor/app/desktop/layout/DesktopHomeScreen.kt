@@ -45,8 +45,8 @@ import com.castor.app.desktop.window.WindowManager
 import com.castor.app.desktop.window.WindowState
 import com.castor.app.desktop.window.toEffectiveBounds
 import com.castor.app.launcher.AppDrawer
-import com.castor.core.ui.components.SystemStats
 import com.castor.core.ui.components.SystemStatusBar
+import com.castor.app.system.SystemStatsViewModel
 import com.castor.core.ui.theme.TerminalColors
 import com.castor.feature.commandbar.CommandBar
 import com.castor.feature.commandbar.CommandBarViewModel
@@ -94,6 +94,7 @@ fun DesktopHomeScreen(
     clipboardManager: ClipboardHistoryManager? = null
 ) {
     val commandBarViewModel: CommandBarViewModel = hiltViewModel()
+    val systemStatsViewModel: SystemStatsViewModel = hiltViewModel()
     val commandBarState by commandBarViewModel.uiState.collectAsState()
     val windowState by windowManager.state.collectAsState()
 
@@ -103,21 +104,8 @@ fun DesktopHomeScreen(
     var isNotificationShadeVisible by rememberSaveable { mutableStateOf(false) }
     var isClipboardVisible by rememberSaveable { mutableStateOf(false) }
 
-    // Placeholder system stats — same pattern as HomeScreen
-    val systemStats = remember {
-        SystemStats(
-            cpuUsage = 23f,
-            ramUsage = 47f,
-            ramUsedMb = 2867,
-            ramTotalMb = 6144,
-            batteryPercent = 72,
-            isCharging = false,
-            wifiConnected = true,
-            bluetoothConnected = true,
-            unreadNotifications = 3,
-            currentTime = "14:32"
-        )
-    }
+    // Real-time system stats from SystemStatsProvider (CPU, RAM, battery, WiFi, BT, time, etc.)
+    val systemStats by systemStatsViewModel.stats.collectAsState()
 
     // Placeholder notification items
     val notifications = remember {

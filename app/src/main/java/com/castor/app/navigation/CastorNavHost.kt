@@ -1,12 +1,21 @@
 package com.castor.app.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.castor.app.launcher.LauncherSettingsScreen
+import com.castor.app.onboarding.OnboardingPreferences
+import com.castor.app.onboarding.OnboardingScreen
+import com.castor.app.onboarding.onboardingDataStore
 import com.castor.app.ui.HomeScreen
 import com.castor.feature.media.sync.ui.BookSyncScreen
 import com.castor.feature.media.ui.MediaScreen
@@ -15,6 +24,8 @@ import com.castor.feature.messaging.ui.MessagingScreen
 import com.castor.feature.recommendations.ui.RecommendationsScreen
 import com.castor.feature.recommendations.ui.WatchHistoryScreen
 import com.castor.feature.reminders.ui.RemindersScreen
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -27,7 +38,13 @@ import java.nio.charset.StandardCharsets
  * as a separate window in the tiling workspace — no NavHost is needed
  * because windows can be opened/closed independently.
  *
+ * On first launch, the user is directed to the onboarding wizard which
+ * guides them through granting permissions required for full launcher
+ * functionality. Once completed, onboarding is not shown again unless
+ * the onboarding version is bumped.
+ *
  * Routes:
+ * - "onboarding"   — first-launch setup wizard (permissions, default launcher)
  * - "home"         — main dashboard (with gesture-driven app drawer overlay)
  * - "messages"     — unified messaging inbox (split-pane on tablets)
  * - "conversation" — individual conversation thread (phone-only; tablets use embedded pane)
@@ -47,8 +64,37 @@ import java.nio.charset.StandardCharsets
 @Composable
 fun CastorNavHost() {
     val navController = rememberNavController()
+    val context = LocalContext.current
 
-    NavHost(navController = navController, startDestination = "home") {
+    // Determine start destination based on onboarding completion.
+    // We read this synchronously before rendering, so the user never sees
+    // a flash of the wrong screen.
+    var startDestination by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        val isCompleted = context.onboardingDataStore.data
+            .map { it[OnboardingPreferences.ONBOARDING_COMPLETED] ?: false }
+            .first()
+        startDestination = if (isCompleted) "home" else "onboarding"
+    }
+
+    // Wait until we know the start destination before rendering the NavHost.
+    // This prevents a brief flash of the home screen on first launch.
+    val destination = startDestination ?: return
+
+    NavHost(navController = navController, startDestination = destination) {
+        composable("onboarding") {
+            OnboardingScreen(
+                onComplete = {
+                    navController.navigate("home") {
+                        // Remove onboarding from the back stack so pressing
+                        // back from home does not return to the wizard.
+                        popUpTo("onboarding") { inclusive = true }
+                    }
+                }
+            )
+        }
+
         composable("home") {
             HomeScreen(
                 onNavigateToMessages = { navController.navigate("messages") },

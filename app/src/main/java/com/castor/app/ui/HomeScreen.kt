@@ -31,7 +31,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -47,8 +46,8 @@ import com.castor.app.launcher.AppDrawer
 import com.castor.app.launcher.GestureHandler
 import com.castor.core.ui.components.AgentCard
 import com.castor.core.ui.components.QuickLaunchBar
-import com.castor.core.ui.components.SystemStats
 import com.castor.core.ui.components.SystemStatusBar
+import com.castor.app.system.SystemStatsViewModel
 import com.castor.core.ui.theme.CastorPrimary
 import com.castor.core.ui.theme.SpotifyGreen
 import com.castor.core.ui.theme.TeamsBlue
@@ -89,28 +88,16 @@ fun HomeScreen(
     onNavigateToReminders: () -> Unit,
     onNavigateToRecommendations: () -> Unit,
     onNavigateToSettings: () -> Unit,
-    viewModel: CommandBarViewModel = hiltViewModel()
+    viewModel: CommandBarViewModel = hiltViewModel(),
+    systemStatsViewModel: SystemStatsViewModel = hiltViewModel()
 ) {
     val commandBarState by viewModel.uiState.collectAsState()
 
     // App drawer visibility state — survives recomposition but not process death
     var isAppDrawerVisible by rememberSaveable { mutableStateOf(false) }
 
-    // Placeholder system stats — in production, a dedicated ViewModel would provide real values
-    val systemStats = remember {
-        SystemStats(
-            cpuUsage = 23f,
-            ramUsage = 47f,
-            ramUsedMb = 2867,
-            ramTotalMb = 6144,
-            batteryPercent = 72,
-            isCharging = false,
-            wifiConnected = true,
-            bluetoothConnected = true,
-            unreadNotifications = 3,
-            currentTime = "14:32"
-        )
-    }
+    // Real-time system stats from SystemStatsProvider (CPU, RAM, battery, WiFi, BT, time, etc.)
+    val systemStats by systemStatsViewModel.stats.collectAsState()
 
     // Placeholder counts — in production, from agent ViewModels
     val unreadMessages = 5
