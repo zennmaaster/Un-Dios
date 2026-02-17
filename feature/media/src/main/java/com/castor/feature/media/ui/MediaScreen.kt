@@ -73,6 +73,7 @@ import coil.compose.AsyncImage
 import com.castor.core.common.model.MediaSource
 import com.castor.core.common.model.UnifiedMediaItem
 import com.castor.core.ui.theme.AudibleOrange
+import com.castor.core.ui.theme.KindleBlue
 import com.castor.core.ui.theme.SpotifyGreen
 import com.castor.core.ui.theme.TerminalColors
 import com.castor.core.ui.theme.YouTubeRed
@@ -98,6 +99,7 @@ import com.castor.core.ui.theme.YouTubeRed
 @Composable
 fun MediaScreen(
     onBack: () -> Unit,
+    onNavigateToBookSync: () -> Unit = {},
     viewModel: MediaViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -152,6 +154,11 @@ fun MediaScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // Library Sync section — Kindle/Audible cross-device sync
+            LibrarySyncSection(onNavigateToBookSync = onNavigateToBookSync)
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             // Source tabs
             SourceTabBar(
                 selectedTab = state.selectedTab,
@@ -198,6 +205,76 @@ fun MediaScreen(
             }
 
             Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+// =============================================================================
+// LibrarySyncSection — Kindle/Audible sync entry point
+// =============================================================================
+
+/**
+ * A compact banner on the media screen that links to the full Book Sync screen.
+ * Shows a brief description and a "View Library Sync" call-to-action.
+ */
+@Composable
+private fun LibrarySyncSection(onNavigateToBookSync: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(TerminalColors.Surface.copy(alpha = 0.5f))
+            .clickable(onClick = onNavigateToBookSync)
+            .padding(12.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // Icon
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(TerminalColors.Accent.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.VolumeUp,
+                    contentDescription = null,
+                    tint = TerminalColors.Accent,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Library Sync",
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TerminalColors.Command
+                    )
+                )
+                Text(
+                    text = "Kindle + Audible position tracking",
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        color = TerminalColors.Subtext
+                    )
+                )
+            }
+
+            Icon(
+                imageVector = Icons.Default.OpenInNew,
+                contentDescription = "Open library sync",
+                tint = TerminalColors.Subtext,
+                modifier = Modifier.size(14.dp)
+            )
         }
     }
 }
@@ -879,6 +956,7 @@ private fun ConnectedSourceView(source: MediaSource, sourceColor: Color) {
         MediaSource.SPOTIFY -> "Spotify" to "Connected. Your playlists and library are available."
         MediaSource.YOUTUBE -> "YouTube" to "Connected. Your playlists and subscriptions are available."
         MediaSource.AUDIBLE -> "Audible" to "Connected. Your audiobook library is available."
+        else -> source.name to "Connected."
     }
 
     Column(
@@ -897,6 +975,7 @@ private fun ConnectedSourceView(source: MediaSource, sourceColor: Color) {
                     MediaSource.SPOTIFY -> Icons.Default.MusicNote
                     MediaSource.YOUTUBE -> Icons.Default.PlayArrow
                     MediaSource.AUDIBLE -> Icons.Default.Headphones
+                    else -> Icons.Default.MusicNote
                 },
                 contentDescription = label,
                 tint = sourceColor,
@@ -988,6 +1067,7 @@ private fun DisconnectedSourceCta(source: MediaSource, sourceColor: Color) {
         MediaSource.SPOTIFY -> "Spotify" to "Open Spotify to enable media control."
         MediaSource.YOUTUBE -> "YouTube" to "Open YouTube to enable media control."
         MediaSource.AUDIBLE -> "Audible" to "Open Audible to enable audiobook control."
+        else -> source.name to "Open the app to enable media control."
     }
 
     Column(

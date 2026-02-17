@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Configuration for the MediaAccessibilityService.
+
+  This service only monitors the Kindle and Audible apps to extract
+  reading/listening progress. It does not capture content or interact
+  with other applications.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowContentChanged|typeWindowStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagReportViewIds|flagIncludeNotImportantViews"
+    android:canRetrieveWindowContent="true"
+    android:description="@string/accessibility_service_description"
+    android:notificationTimeout="500"
+    android:packageNames="com.amazon.kindle,com.audible.application"
+    android:settingsActivity="com.castor.app.MainActivity" />

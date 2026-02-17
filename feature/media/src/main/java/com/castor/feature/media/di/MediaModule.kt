@@ -1,6 +1,8 @@
 package com.castor.feature.media.di
 
+import com.castor.core.common.model.BookNotificationCallback
 import com.castor.feature.media.adapter.UnifiedMediaAdapter
+import com.castor.feature.media.kindle.BookNotificationCallbackImpl
 import com.castor.feature.media.spotify.SpotifyApi
 import com.castor.feature.media.spotify.SpotifyAuthManager
 import com.castor.feature.media.spotify.SpotifyMediaAdapter
@@ -137,6 +139,16 @@ object MediaModule {
     fun provideAudibleAdapterIntoSet(
         adapter: AudibleMediaAdapter
     ): UnifiedMediaAdapter = adapter
+
+    // -----------------------------------------------------------------
+    // Book Sync — Kindle/Audible notification callback
+    // -----------------------------------------------------------------
+
+    @Provides
+    @Singleton
+    fun provideBookNotificationCallback(
+        impl: BookNotificationCallbackImpl
+    ): BookNotificationCallback = impl
 
     // -----------------------------------------------------------------
     // Constants

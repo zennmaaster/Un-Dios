@@ -1,0 +1,311 @@
+package com.castor.core.inference.prompt
+
+/**
+ * Represents a single turn in a multi-turn conversation.
+ *
+ * @param role The role of the speaker: "system", "user", or "assistant"
+ * @param content The text content of the message
+ */
+data class ConversationTurn(
+    val role: String,
+    val content: String
+)
+
+/**
+ * Formats prompts according to the template expected by each model family.
+ *
+ * Using the correct prompt format is critical for on-device LLM inference:
+ * a misformatted prompt will cause the model to produce incoherent output
+ * or fail to follow instructions. Each model family has its own special
+ * token vocabulary for delimiting system/user/assistant messages.
+ *
+ * This object is stateless and safe to use from any thread.
+ */
+object PromptFormatter {
+
+    /**
+     * Format a single-turn prompt with an optional system message.
+     *
+     * @param format The prompt template format to use
+     * @param systemPrompt System-level instructions (may be blank)
+     * @param userPrompt The user's input message
+     * @return The fully formatted prompt string ready for inference
+     */
+    fun formatPrompt(
+        format: PromptFormat,
+        systemPrompt: String,
+        userPrompt: String
+    ): String {
+        return when (format) {
+            PromptFormat.CHATML -> formatChatML(systemPrompt, userPrompt)
+            PromptFormat.PHI3 -> formatPhi3(systemPrompt, userPrompt)
+            PromptFormat.LLAMA3 -> formatLlama3(systemPrompt, userPrompt)
+            PromptFormat.GEMMA -> formatGemma(systemPrompt, userPrompt)
+            PromptFormat.ALPACA -> formatAlpaca(systemPrompt, userPrompt)
+        }
+    }
+
+    /**
+     * Format a multi-turn conversation for continued generation.
+     *
+     * The conversation turns should include system, user, and assistant
+     * messages in order. The formatter will append the assistant turn
+     * prefix so the model continues generating from there.
+     *
+     * @param format The prompt template format to use
+     * @param turns The ordered list of conversation turns
+     * @return The fully formatted multi-turn prompt string
+     */
+    fun formatMultiTurn(
+        format: PromptFormat,
+        turns: List<ConversationTurn>
+    ): String {
+        return when (format) {
+            PromptFormat.CHATML -> formatMultiTurnChatML(turns)
+            PromptFormat.PHI3 -> formatMultiTurnPhi3(turns)
+            PromptFormat.LLAMA3 -> formatMultiTurnLlama3(turns)
+            PromptFormat.GEMMA -> formatMultiTurnGemma(turns)
+            PromptFormat.ALPACA -> formatMultiTurnAlpaca(turns)
+        }
+    }
+
+    /**
+     * Detect the likely prompt format from a model filename.
+     *
+     * Useful as a fallback when model metadata is unavailable.
+     * Checks for common substrings in GGUF filenames.
+     *
+     * @param filename The model filename (e.g. "qwen2.5-3b-instruct-q4_k_m.gguf")
+     * @return The detected [PromptFormat], defaulting to [PromptFormat.CHATML]
+     */
+    fun detectFromFilename(filename: String): PromptFormat {
+        val lower = filename.lowercase()
+        return when {
+            "qwen" in lower -> PromptFormat.CHATML
+            "yi-" in lower || "yi_" in lower -> PromptFormat.CHATML
+            "phi-3" in lower || "phi3" in lower -> PromptFormat.PHI3
+            "llama-3" in lower || "llama3" in lower -> PromptFormat.LLAMA3
+            "gemma" in lower -> PromptFormat.GEMMA
+            else -> PromptFormat.CHATML
+        }
+    }
+
+    /**
+     * Detect the likely model family from a filename.
+     *
+     * @param filename The model filename
+     * @return The detected [ModelFamily], defaulting to [ModelFamily.GENERIC]
+     */
+    fun detectFamilyFromFilename(filename: String): ModelFamily {
+        val lower = filename.lowercase()
+        return when {
+            "qwen2.5" in lower || "qwen2_5" in lower -> ModelFamily.QWEN25
+            "phi-3" in lower || "phi3" in lower -> ModelFamily.PHI3
+            "llama-3" in lower || "llama3" in lower -> ModelFamily.LLAMA3
+            "gemma" in lower -> ModelFamily.GEMMA
+            else -> ModelFamily.GENERIC
+        }
+    }
+
+    // =========================================================================
+    // ChatML format (Qwen2.5, Yi, etc.)
+    // =========================================================================
+
+    /**
+     * ChatML format:
+     * ```
+     * <|im_start|>system
+     * {system_prompt}<|im_end|>
+     * <|im_start|>user
+     * {user_prompt}<|im_end|>
+     * <|im_start|>assistant
+     * ```
+     */
+    private fun formatChatML(systemPrompt: String, userPrompt: String): String = buildString {
+        if (systemPrompt.isNotBlank()) {
+            append("<|im_start|>system\n")
+            append(systemPrompt)
+            append("<|im_end|>\n")
+        }
+        append("<|im_start|>user\n")
+        append(userPrompt)
+        append("<|im_end|>\n")
+        append("<|im_start|>assistant\n")
+    }
+
+    private fun formatMultiTurnChatML(turns: List<ConversationTurn>): String = buildString {
+        for (turn in turns) {
+            append("<|im_start|>${turn.role}\n")
+            append(turn.content)
+            append("<|im_end|>\n")
+        }
+        append("<|im_start|>assistant\n")
+    }
+
+    // =========================================================================
+    // Phi-3 format (Microsoft)
+    // =========================================================================
+
+    /**
+     * Phi-3 format:
+     * ```
+     * <|system|>
+     * {system_prompt}<|end|>
+     * <|user|>
+     * {user_prompt}<|end|>
+     * <|assistant|>
+     * ```
+     */
+    private fun formatPhi3(systemPrompt: String, userPrompt: String): String = buildString {
+        if (systemPrompt.isNotBlank()) {
+            append("<|system|>\n")
+            append(systemPrompt)
+            append("<|end|>\n")
+        }
+        append("<|user|>\n")
+        append(userPrompt)
+        append("<|end|>\n")
+        append("<|assistant|>\n")
+    }
+
+    private fun formatMultiTurnPhi3(turns: List<ConversationTurn>): String = buildString {
+        for (turn in turns) {
+            val tag = when (turn.role) {
+                "system" -> "<|system|>"
+                "user" -> "<|user|>"
+                "assistant" -> "<|assistant|>"
+                else -> "<|user|>"
+            }
+            append("$tag\n")
+            append(turn.content)
+            append("<|end|>\n")
+        }
+        append("<|assistant|>\n")
+    }
+
+    // =========================================================================
+    // Llama 3 format (Meta)
+    // =========================================================================
+
+    /**
+     * Llama 3 format:
+     * ```
+     * <|begin_of_text|><|start_header_id|>system<|end_header_id|>
+     *
+     * {system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>
+     *
+     * {user_prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+     *
+     * ```
+     */
+    private fun formatLlama3(systemPrompt: String, userPrompt: String): String = buildString {
+        append("<|begin_of_text|>")
+        if (systemPrompt.isNotBlank()) {
+            append("<|start_header_id|>system<|end_header_id|>\n\n")
+            append(systemPrompt)
+            append("<|eot_id|>")
+        }
+        append("<|start_header_id|>user<|end_header_id|>\n\n")
+        append(userPrompt)
+        append("<|eot_id|>")
+        append("<|start_header_id|>assistant<|end_header_id|>\n\n")
+    }
+
+    private fun formatMultiTurnLlama3(turns: List<ConversationTurn>): String = buildString {
+        append("<|begin_of_text|>")
+        for (turn in turns) {
+            append("<|start_header_id|>${turn.role}<|end_header_id|>\n\n")
+            append(turn.content)
+            append("<|eot_id|>")
+        }
+        append("<|start_header_id|>assistant<|end_header_id|>\n\n")
+    }
+
+    // =========================================================================
+    // Gemma format (Google)
+    // =========================================================================
+
+    /**
+     * Gemma format:
+     * ```
+     * <start_of_turn>user
+     * {system_prompt}
+     *
+     * {user_prompt}<end_of_turn>
+     * <start_of_turn>model
+     * ```
+     *
+     * Note: Gemma does not have a dedicated system role; system instructions
+     * are prepended to the first user message.
+     */
+    private fun formatGemma(systemPrompt: String, userPrompt: String): String = buildString {
+        append("<start_of_turn>user\n")
+        if (systemPrompt.isNotBlank()) {
+            append(systemPrompt)
+            append("\n\n")
+        }
+        append(userPrompt)
+        append("<end_of_turn>\n")
+        append("<start_of_turn>model\n")
+    }
+
+    private fun formatMultiTurnGemma(turns: List<ConversationTurn>): String = buildString {
+        for (turn in turns) {
+            val role = when (turn.role) {
+                "assistant" -> "model"
+                "system" -> "user" // Gemma has no system role; fold into user
+                else -> turn.role
+            }
+            append("<start_of_turn>$role\n")
+            append(turn.content)
+            append("<end_of_turn>\n")
+        }
+        append("<start_of_turn>model\n")
+    }
+
+    // =========================================================================
+    // Alpaca format (generic instruction following)
+    // =========================================================================
+
+    /**
+     * Alpaca/Stanford format:
+     * ```
+     * Below is an instruction that describes a task. Write a response that appropriately completes the request.
+     *
+     * ### Instruction:
+     * {system_prompt}
+     * {user_prompt}
+     *
+     * ### Response:
+     * ```
+     */
+    private fun formatAlpaca(systemPrompt: String, userPrompt: String): String = buildString {
+        append("Below is an instruction that describes a task. ")
+        append("Write a response that appropriately completes the request.\n\n")
+        append("### Instruction:\n")
+        if (systemPrompt.isNotBlank()) {
+            append(systemPrompt)
+            append("\n\n")
+        }
+        append(userPrompt)
+        append("\n\n### Response:\n")
+    }
+
+    private fun formatMultiTurnAlpaca(turns: List<ConversationTurn>): String = buildString {
+        // Alpaca is not natively multi-turn, so we concatenate the history
+        // into a single instruction block with clear delimiters.
+        append("Below is a conversation. Continue the assistant's response.\n\n")
+        for (turn in turns) {
+            val label = when (turn.role) {
+                "system" -> "System"
+                "user" -> "User"
+                "assistant" -> "Assistant"
+                else -> turn.role.replaceFirstChar { it.uppercase() }
+            }
+            append("### $label:\n")
+            append(turn.content)
+            append("\n\n")
+        }
+        append("### Assistant:\n")
+    }
+}

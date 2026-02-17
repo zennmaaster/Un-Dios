@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Un-Dios</string>
+    <string name="accessibility_service_description">Un-Dios Media Sync monitors the Kindle and Audible apps to track your reading and listening progress. This lets you seamlessly switch between reading and listening to the same book. No content is captured or sent anywhere — all data stays on your device.</string>
 </resources>

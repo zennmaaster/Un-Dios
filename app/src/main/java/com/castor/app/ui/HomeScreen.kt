@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -51,6 +52,7 @@ import com.castor.core.ui.components.SystemStatusBar
 import com.castor.core.ui.theme.CastorPrimary
 import com.castor.core.ui.theme.SpotifyGreen
 import com.castor.core.ui.theme.TeamsBlue
+import com.castor.core.ui.theme.NetflixRed
 import com.castor.core.ui.theme.TerminalColors
 import com.castor.core.ui.theme.WhatsAppGreen
 import com.castor.feature.commandbar.CommandBar
@@ -85,6 +87,7 @@ fun HomeScreen(
     onNavigateToMessages: () -> Unit,
     onNavigateToMedia: () -> Unit,
     onNavigateToReminders: () -> Unit,
+    onNavigateToRecommendations: () -> Unit,
     onNavigateToSettings: () -> Unit,
     viewModel: CommandBarViewModel = hiltViewModel()
 ) {
@@ -231,6 +234,23 @@ fun HomeScreen(
                                 text = "LOCAL inference",
                                 isActive = true,
                                 activeColor = TerminalColors.Success
+                            )
+                        }
+                    }
+
+                    // ---- Recommendations card ----
+                    item {
+                        AgentCard(
+                            title = "Picks",
+                            subtitle = "Watch recommendations",
+                            icon = Icons.Default.Star,
+                            accentColor = NetflixRed,
+                            onClick = onNavigateToRecommendations
+                        ) {
+                            AgentStatusText(
+                                text = "On-device picks",
+                                isActive = true,
+                                activeColor = NetflixRed
                             )
                         }
                     }

@@ -297,6 +297,9 @@ class PlaybackOrchestrator @Inject constructor(
                     // resume later and these apps handle pause gracefully.
                     controls.pause()
                 }
+                else -> {
+                    controls.pause()
+                }
             }
             Log.d(TAG, "stopSource($source): command sent.")
         } else {
@@ -363,6 +366,13 @@ class PlaybackOrchestrator @Inject constructor(
                         ?.apply {
                             addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                         } ?: return
+                }
+                else -> {
+                    // Generic fallback: try to resolve the source URI as a view intent.
+                    android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                        data = android.net.Uri.parse(item.sourceUri)
+                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
                 }
             }
             context.startActivity(intent)

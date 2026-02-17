@@ -2,6 +2,9 @@ package com.castor.core.inference.llama
 
 import com.castor.core.inference.InferenceConfig
 import com.castor.core.inference.InferenceEngine
+import com.castor.core.inference.prompt.ModelFamily
+import com.castor.core.inference.prompt.PromptFormat
+import com.castor.core.inference.prompt.PromptFormatter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -16,6 +19,10 @@ import javax.inject.Singleton
  * The native library (libllama.so) must be compiled from the llama.cpp source
  * using the Android NDK and included in the app's jniLibs directory.
  *
+ * Supports multiple prompt formats via [PromptFormatter], with ChatML (Qwen2.5)
+ * as the default. The prompt format is determined from the [InferenceConfig]
+ * or auto-detected from the model filename.
+ *
  * For initial development, this class provides a mock implementation.
  * Replace the method bodies with actual JNI calls once the native lib is built.
  */
@@ -29,11 +36,61 @@ class LlamaCppEngine @Inject constructor() : InferenceEngine {
     override val isLoaded: Boolean get() = _isLoaded
     override val modelName: String get() = config?.modelPath?.substringAfterLast("/") ?: "none"
 
+    /**
+     * The currently active prompt format. Defaults to ChatML for Qwen2.5 models.
+     * Updated when a model is loaded based on the config or filename detection.
+     */
+    val promptFormat: PromptFormat get() = config?.promptFormat ?: PromptFormat.CHATML
+
+    /**
+     * The currently active model family.
+     */
+    val modelFamily: ModelFamily get() = config?.modelFamily ?: ModelFamily.QWEN25
+
     override suspend fun loadModel(modelPath: String) = withContext(Dispatchers.IO) {
         if (_isLoaded) unloadModel()
-        config = InferenceConfig(modelPath = modelPath)
+
+        // Auto-detect prompt format and model family from filename
+        val detectedFormat = PromptFormatter.detectFromFilename(modelPath)
+        val detectedFamily = PromptFormatter.detectFamilyFromFilename(modelPath)
+
+        config = InferenceConfig(
+            modelPath = modelPath,
+            promptFormat = detectedFormat,
+            modelFamily = detectedFamily,
+            contextSize = detectedFamily.defaultContextLength.coerceAtMost(4096),
+            flashAttention = detectedFamily == ModelFamily.QWEN25
+        )
+
         // TODO: Replace with JNI call:
-        // nativeHandle = nativeLoadModel(modelPath, config.contextSize, config.threads, config.gpuLayers)
+        // nativeHandle = nativeLoadModel(
+        //     modelPath,
+        //     config!!.contextSize,
+        //     config!!.threads,
+        //     config!!.gpuLayers,
+        //     config!!.useMmap,
+        //     config!!.flashAttention
+        // )
+        _isLoaded = true
+    }
+
+    /**
+     * Load model with an explicit configuration.
+     * Allows callers to override auto-detected settings.
+     */
+    suspend fun loadModelWithConfig(inferenceConfig: InferenceConfig) = withContext(Dispatchers.IO) {
+        if (_isLoaded) unloadModel()
+        config = inferenceConfig
+
+        // TODO: Replace with JNI call:
+        // nativeHandle = nativeLoadModel(
+        //     inferenceConfig.modelPath,
+        //     inferenceConfig.contextSize,
+        //     inferenceConfig.threads,
+        //     inferenceConfig.gpuLayers,
+        //     inferenceConfig.useMmap,
+        //     inferenceConfig.flashAttention
+        // )
         _isLoaded = true
     }
 
@@ -55,10 +112,15 @@ class LlamaCppEngine @Inject constructor() : InferenceEngine {
 
         val fullPrompt = buildPrompt(systemPrompt, prompt)
         // TODO: Replace with JNI call:
-        // return@withContext nativeGenerate(nativeHandle, fullPrompt, maxTokens, temperature)
+        // return@withContext nativeGenerate(
+        //     nativeHandle, fullPrompt, maxTokens, temperature,
+        //     config!!.topP, config!!.topK, config!!.repeatPenalty
+        // )
 
         // Mock response for development
-        "[Castor AI] I received your message: \"$prompt\". The on-device LLM will be connected once llama.cpp native library is compiled via NDK."
+        val modelInfo = config?.let { "${it.modelFamily.displayName} (${it.promptFormat.name})" } ?: "unknown"
+        "[Castor AI | $modelInfo] I received your message: \"$prompt\". " +
+            "The on-device LLM will be connected once llama.cpp native library is compiled via NDK."
     }
 
     override fun generateStream(
@@ -71,10 +133,14 @@ class LlamaCppEngine @Inject constructor() : InferenceEngine {
 
         val fullPrompt = buildPrompt(systemPrompt, prompt)
         // TODO: Replace with streaming JNI callback:
-        // nativeGenerateStream(nativeHandle, fullPrompt, maxTokens, temperature) { token -> emit(token) }
+        // nativeGenerateStream(
+        //     nativeHandle, fullPrompt, maxTokens, temperature,
+        //     config!!.topP, config!!.topK, config!!.repeatPenalty
+        // ) { token -> emit(token) }
 
         // Mock streaming for development
-        val response = "[Castor] Processing your request..."
+        val modelInfo = config?.let { "${it.modelFamily.displayName}" } ?: "local"
+        val response = "[Castor | $modelInfo] Processing your request locally..."
         for (word in response.split(" ")) {
             emit("$word ")
             kotlinx.coroutines.delay(50)
@@ -88,18 +154,31 @@ class LlamaCppEngine @Inject constructor() : InferenceEngine {
 
     override suspend fun getTokenCount(text: String): Int = tokenize(text).size
 
+    /**
+     * Build the full prompt string using the configured [PromptFormat].
+     *
+     * Delegates to [PromptFormatter] which handles the specific token
+     * wrapping for each model family (ChatML for Qwen2.5, Phi-3 tags, etc.).
+     */
     private fun buildPrompt(systemPrompt: String, userPrompt: String): String {
-        return if (systemPrompt.isNotBlank()) {
-            "<|system|>\n$systemPrompt<|end|>\n<|user|>\n$userPrompt<|end|>\n<|assistant|>\n"
-        } else {
-            "<|user|>\n$userPrompt<|end|>\n<|assistant|>\n"
-        }
+        val format = config?.promptFormat ?: PromptFormat.CHATML
+        return PromptFormatter.formatPrompt(format, systemPrompt, userPrompt)
     }
 
     // JNI native method declarations — uncomment when native lib is ready
-    // private external fun nativeLoadModel(path: String, contextSize: Int, threads: Int, gpuLayers: Int): Long
+    // private external fun nativeLoadModel(
+    //     path: String, contextSize: Int, threads: Int,
+    //     gpuLayers: Int, useMmap: Boolean, flashAttention: Boolean
+    // ): Long
     // private external fun nativeFreeModel(handle: Long)
-    // private external fun nativeGenerate(handle: Long, prompt: String, maxTokens: Int, temperature: Float): String
+    // private external fun nativeGenerate(
+    //     handle: Long, prompt: String, maxTokens: Int, temperature: Float,
+    //     topP: Float, topK: Int, repeatPenalty: Float
+    // ): String
+    // private external fun nativeGenerateStream(
+    //     handle: Long, prompt: String, maxTokens: Int, temperature: Float,
+    //     topP: Float, topK: Int, repeatPenalty: Float, callback: (String) -> Unit
+    // )
     // private external fun nativeTokenize(handle: Long, text: String): IntArray
 
     companion object {

@@ -41,6 +41,7 @@
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
+            android:resizeableActivity="true"
             android:theme="@style/Theme.Castor">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -52,6 +53,11 @@
                 <category android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
+
+            <!-- Samsung DeX desktop mode support -->
+            <meta-data
+                android:name="com.samsung.android.desktopmode.enabled"
+                android:value="true" />
         </activity>
 
         <!-- Notification Listener Service -->
@@ -72,6 +78,19 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="AI agent orchestration maintaining active connections" />
+        </service>
+
+        <!-- Media Accessibility Service — Kindle/Audible progress tracking -->
+        <service
+            android:name="com.castor.feature.media.accessibility.MediaAccessibilityService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
         </service>
 
     </application>

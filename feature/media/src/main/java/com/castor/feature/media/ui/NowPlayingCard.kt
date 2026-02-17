@@ -276,6 +276,7 @@ private fun MediaSourceBadge(source: MediaSource, modifier: Modifier = Modifier)
         MediaSource.SPOTIFY -> "Spotify" to SpotifyGreen
         MediaSource.YOUTUBE -> "YouTube" to YouTubeRed
         MediaSource.AUDIBLE -> "Audible" to AudibleOrange
+        else -> source.name to TerminalColors.Accent
     }
 
     Box(
@@ -476,6 +477,7 @@ private fun sourceProgressColor(source: MediaSource?): Color = when (source) {
     MediaSource.YOUTUBE -> YouTubeRed
     MediaSource.AUDIBLE -> AudibleOrange
     null -> TerminalColors.Accent
+    else -> TerminalColors.Accent
 }
 
 /**

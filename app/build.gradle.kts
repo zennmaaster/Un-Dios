@@ -56,6 +56,7 @@ dependencies {
     implementation(project(":feature:messaging"))
     implementation(project(":feature:media"))
     implementation(project(":feature:reminders"))
+    implementation(project(":feature:recommendations"))
     implementation(project(":agent:orchestrator"))
 
     // Core Android

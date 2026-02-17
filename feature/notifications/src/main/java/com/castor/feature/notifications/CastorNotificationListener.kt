@@ -3,7 +3,9 @@ package com.castor.feature.notifications
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import com.castor.core.common.model.BookNotificationCallback
 import com.castor.core.common.model.CastorMessage
+import com.castor.core.common.model.MediaNotificationCallback
 import com.castor.core.common.model.MessageSource
 import com.castor.core.data.repository.MessageRepository
 import dagger.hilt.android.AndroidEntryPoint
@@ -50,15 +52,28 @@ class CastorNotificationListener : NotificationListenerService() {
     @Inject lateinit var messageRepository: MessageRepository
     @Inject lateinit var notificationParser: NotificationParser
     @Inject lateinit var replyManager: ReplyManager
+    @Inject lateinit var mediaNotificationCallback: MediaNotificationCallback
+    @Inject lateinit var bookNotificationCallback: BookNotificationCallback
 
     /** Coroutine scope tied to this service's lifecycle. Cancelled in [onListenerDisconnected]. */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    /** Package names of apps we monitor. */
+    /** Package names of messaging apps we monitor. */
     private val monitoredPackages = setOf(
         MessageSource.WHATSAPP.packageName,
         MessageSource.TEAMS.packageName
     )
+
+    /** Package names of media/streaming apps forwarded to the recommendation engine. */
+    private val monitoredMediaPackages = setOf(
+        "com.netflix.mediaclient",
+        "com.amazon.avod",
+        "com.google.android.youtube",
+        "com.android.chrome"
+    )
+
+    /** Kindle package name — forwarded to the book sync tracking pipeline. */
+    private val kindlePackage = "com.amazon.kindle"
 
     /**
      * Tracks the content hash of the last processed message per notification key.
@@ -103,7 +118,25 @@ class CastorNotificationListener : NotificationListenerService() {
     // -------------------------------------------------------------------------------------
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        // Only process notifications from monitored packages.
+        // Forward media notifications to the recommendation tracking pipeline.
+        if (sbn.packageName in monitoredMediaPackages) {
+            try {
+                mediaNotificationCallback.onMediaNotificationPosted(sbn)
+            } catch (e: Exception) {
+                Log.e(TAG, "Media notification callback failed", e)
+            }
+        }
+
+        // Forward Kindle notifications to the book sync tracking pipeline.
+        if (sbn.packageName == kindlePackage) {
+            try {
+                bookNotificationCallback.onBookNotificationPosted(sbn)
+            } catch (e: Exception) {
+                Log.e(TAG, "Book notification callback failed", e)
+            }
+        }
+
+        // Only process messaging notifications from monitored packages.
         if (sbn.packageName !in monitoredPackages) return
 
         val source = MessageSource.fromPackageName(sbn.packageName) ?: return
@@ -157,6 +190,24 @@ class CastorNotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        // Forward media notification removal to the recommendation tracking pipeline.
+        if (sbn.packageName in monitoredMediaPackages) {
+            try {
+                mediaNotificationCallback.onMediaNotificationRemoved(sbn)
+            } catch (e: Exception) {
+                Log.e(TAG, "Media notification removal callback failed", e)
+            }
+        }
+
+        // Forward Kindle notification removal to the book sync tracking pipeline.
+        if (sbn.packageName == kindlePackage) {
+            try {
+                bookNotificationCallback.onBookNotificationRemoved(sbn)
+            } catch (e: Exception) {
+                Log.e(TAG, "Book notification removal callback failed", e)
+            }
+        }
+
         if (sbn.packageName !in monitoredPackages) return
 
         // Clean up cached reply action.

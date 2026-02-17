@@ -350,6 +350,7 @@ fun MediaSourceBadge(
         MediaSource.SPOTIFY -> "SP" to SpotifyGreen
         MediaSource.YOUTUBE -> "YT" to YouTubeRed
         MediaSource.AUDIBLE -> "AU" to AudibleOrange
+        else -> source.name.take(2) to TerminalColors.Accent
     }
 
     Box(
@@ -381,6 +382,7 @@ fun MediaSourceBadgeFull(
         MediaSource.SPOTIFY -> "Spotify" to SpotifyGreen
         MediaSource.YOUTUBE -> "YouTube" to YouTubeRed
         MediaSource.AUDIBLE -> "Audible" to AudibleOrange
+        else -> source.name to TerminalColors.Accent
     }
 
     Box(
@@ -409,6 +411,7 @@ fun MediaSource.toAccentColor(): Color = when (this) {
     MediaSource.SPOTIFY -> SpotifyGreen
     MediaSource.YOUTUBE -> YouTubeRed
     MediaSource.AUDIBLE -> AudibleOrange
+    else -> TerminalColors.Accent
 }
 
 /**

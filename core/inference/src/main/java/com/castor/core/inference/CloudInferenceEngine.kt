@@ -31,8 +31,17 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /**
- * Cloud-based inference engine that calls external LLM APIs as a fallback
- * when on-device inference is unavailable or insufficient.
+ * Cloud-based inference engine that calls external LLM APIs.
+ *
+ * IMPORTANT: THIS ENGINE IS DISABLED BY DEFAULT.
+ * The Un-Dios app is configured for fully on-device inference only.
+ * No data is sent to any cloud service. This code is retained for
+ * potential future use but is never called by [HybridInferenceEngine].
+ *
+ * If you need to re-enable cloud inference in the future:
+ * 1. Update [HybridInferenceEngine] to restore the cloud routing logic
+ * 2. Configure API keys via [SecurePreferences]
+ * 3. Update the privacy settings UI to allow users to opt in
  *
  * Supports:
  * - Anthropic (Claude) via Messages API
