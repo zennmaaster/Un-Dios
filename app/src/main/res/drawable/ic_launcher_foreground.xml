@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Shield shape representing privacy/security -->
+    <path
+        android:fillColor="#7C4DFF"
+        android:pathData="M54,24L30,34v15c0,14.4 10.2,27.9 24,31.1C67.8,76.9 78,63.4 78,49V34L54,24z"/>
+    <!-- Inner shield highlight -->
+    <path
+        android:fillColor="#B388FF"
+        android:pathData="M54,28L34,36.7v12.3c0,12 8.5,23.3 20,26 11.5,-2.7 20,-14 20,-26V36.7L54,28z"
+        android:strokeWidth="0"/>
+    <!-- Star/agent symbol in center -->
+    <path
+        android:fillColor="#1A1B2E"
+        android:pathData="M54,40l3.5,7.1 7.8,1.1 -5.7,5.5 1.3,7.8L54,57.8l-6.9,3.7 1.3,-7.8 -5.7,-5.5 7.8,-1.1z"/>
+</vector>

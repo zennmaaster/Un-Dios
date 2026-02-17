@@ -1,0 +1,34 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# App module build output
+/app/build
+
+# Core module build outputs
+/core/*/build
+
+# Feature module build outputs
+/feature/*/build
+
+# Agent module build outputs
+/agent/*/build
+
+# LLM model files (large binaries)
+*.gguf
+*.bin
+models/
+
+# Keystore files
+*.jks
+*.keystore
+
+# Signing configs
+keystore.properties
