@@ -41,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -79,6 +80,8 @@ import com.castor.core.ui.theme.TeamsBlue
 import com.castor.core.ui.theme.NetflixRed
 import com.castor.core.ui.theme.TerminalColors
 import com.castor.core.ui.theme.WhatsAppGreen
+import com.castor.app.onboarding.SetupReadinessManager
+import com.castor.app.onboarding.SetupReadinessState
 import com.castor.app.search.UniversalSearchOverlay
 import com.castor.app.weather.WeatherCard
 import com.castor.app.focus.FocusTimerCard
@@ -86,6 +89,7 @@ import com.castor.feature.commandbar.CommandBar
 import com.castor.feature.commandbar.CommandBarViewModel
 import com.castor.feature.commandbar.VoiceInputState
 import com.castor.feature.reminders.engine.ReminderScheduler
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -157,6 +161,8 @@ fun HomeScreen(
         error = voiceError
     )
 
+    val coroutineScope = rememberCoroutineScope()
+
     // App drawer visibility state -- survives recomposition but not process death
     var isAppDrawerVisible by rememberSaveable { mutableStateOf(false) }
 
@@ -217,6 +223,8 @@ fun HomeScreen(
     }
     val dockManager = androidx.compose.runtime.remember { homeEntryPoint.dockManager() }
     val widgetManager = androidx.compose.runtime.remember { homeEntryPoint.widgetManager() }
+    val setupReadinessManager = androidx.compose.runtime.remember { homeEntryPoint.setupReadinessManager() }
+    val setupReadiness by setupReadinessManager.readiness.collectAsState(initial = SetupReadinessState())
 
     // Pinned apps for the customizable dock
     val pinnedApps by dockManager.pinnedApps.collectAsState()
@@ -276,6 +284,10 @@ fun HomeScreen(
         }
     }
 
+    LaunchedEffect(Unit) {
+        setupReadinessManager.maybeRefreshIfStale()
+    }
+
     // The entire home screen is layered: home content underneath, app drawer overlay on top,
     // lock screen overlay on the very top
     Box(modifier = Modifier.fillMaxSize()) {
@@ -310,7 +322,12 @@ fun HomeScreen(
                 // ============================================================
                 PullToRefreshBox(
                     isRefreshing = isRefreshing,
-                    onRefresh = { briefingViewModel.refreshBriefing() },
+                    onRefresh = {
+                        briefingViewModel.refreshBriefing()
+                        coroutineScope.launch {
+                            setupReadinessManager.refresh()
+                        }
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
@@ -335,6 +352,22 @@ fun HomeScreen(
                                 onClearVoiceError = viewModel::clearVoiceError,
                                 modifier = Modifier.fillMaxWidth()
                             )
+                        }
+
+                        if (!setupReadiness.isReady) {
+                            item(span = { GridItemSpan(2) }) {
+                                SetupReadinessCard(
+                                    readiness = setupReadiness,
+                                    onRunCheck = {
+                                        coroutineScope.launch {
+                                            setupReadinessManager.refresh()
+                                        }
+                                    },
+                                    onOpenSettings = onNavigateToSettings,
+                                    onOpenWalkthrough = { onNavigateToRoute("feature_guide") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
                         }
 
                         // ---- Widget area: spans full width, between command bar and content ----
@@ -902,4 +935,5 @@ interface QuickAddReminderEntryPoint {
 interface HomeScreenEntryPoint {
     fun dockManager(): DockManager
     fun widgetManager(): WidgetManager
+    fun setupReadinessManager(): SetupReadinessManager
 }

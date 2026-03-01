@@ -42,6 +42,13 @@
     <!-- Voice Input: Record audio for speech recognition -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
+    <!-- Hub Server: WiFi state for local IP discovery -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- Hub Server: Network Service Discovery (mDNS/NSD) -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Hub Server: Foreground service for connected devices -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+
     <application
         android:name=".CastorApplication"
         android:allowBackup="false"
@@ -107,6 +114,16 @@
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <!-- Hub Server Foreground Service -->
+        <service
+            android:name=".hub.HubService"
+            android:foregroundServiceType="connectedDevice"
+            android:exported="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Local network hub server for cross-device AI access" />
         </service>
 
         <!-- Focus Timer Foreground Service -->

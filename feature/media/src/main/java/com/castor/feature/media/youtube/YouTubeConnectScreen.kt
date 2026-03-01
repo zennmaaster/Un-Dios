@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -74,6 +75,7 @@ fun YouTubeConnectScreen(
     onBack: () -> Unit
 ) {
     val isAuthenticated by authManager.isAuthenticated.collectAsState()
+    val isConfigured = authManager.isConfigured()
     val scope = rememberCoroutineScope()
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -145,6 +147,14 @@ fun YouTubeConnectScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            if (!isConfigured) {
+                OAuthSetupRequiredCard(
+                    service = "YouTube",
+                    docsPath = "docs/SETUP.md"
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
             if (isAuthenticated) {
                 // -- Connected state ------------------------------------------
                 ConnectedContent(
@@ -157,10 +167,15 @@ fun YouTubeConnectScreen(
                 DisconnectedContent(
                     isLoading = isLoading,
                     errorMessage = errorMessage,
+                    isConfigured = isConfigured,
                     onConnect = {
                         errorMessage = null
                         val intent = authManager.buildAuthIntent()
-                        authLauncher.launch(intent)
+                        if (intent != null) {
+                            authLauncher.launch(intent)
+                        } else {
+                            errorMessage = "OAuth keys missing. Configure local.properties first."
+                        }
                     }
                 )
             }
@@ -279,6 +294,7 @@ private fun ConnectedContent(
 private fun DisconnectedContent(
     isLoading: Boolean,
     errorMessage: String?,
+    isConfigured: Boolean,
     onConnect: () -> Unit
 ) {
     Card(
@@ -345,7 +361,7 @@ private fun DisconnectedContent(
             // Connect button
             Button(
                 onClick = onConnect,
-                enabled = !isLoading,
+                enabled = !isLoading && isConfigured,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = TerminalColors.Error, // Red for YouTube
                     contentColor = TerminalColors.Background
@@ -379,7 +395,50 @@ private fun DisconnectedContent(
                     )
                 }
             }
+
+            if (!isConfigured) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Setup required: add YouTube OAuth values in local.properties.",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    color = TerminalColors.Timestamp,
+                    textAlign = TextAlign.Center
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun OAuthSetupRequiredCard(
+    service: String,
+    docsPath: String
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = TerminalColors.Warning.copy(alpha = 0.1f),
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Default.WarningAmber,
+            contentDescription = null,
+            tint = TerminalColors.Warning,
+            modifier = Modifier.size(16.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "$service OAuth is not configured in this build. Follow $docsPath.",
+            fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp,
+            color = TerminalColors.Output,
+            lineHeight = 16.sp
+        )
     }
 }
 

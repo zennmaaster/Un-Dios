@@ -178,7 +178,7 @@ class LlamaEmbeddingEngine @Inject constructor() : EmbeddingEngine {
     companion object {
         init {
             try {
-                System.loadLibrary("llama")
+                System.loadLibrary("undios-llama")
             } catch (e: UnsatisfiedLinkError) {
                 // Native library not yet available — mock mode
             }

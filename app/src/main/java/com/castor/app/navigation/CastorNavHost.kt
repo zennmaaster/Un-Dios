@@ -23,6 +23,7 @@ import com.castor.app.habits.HabitTrackerScreen
 import com.castor.app.notes.NoteEditorScreen
 import com.castor.app.notes.NotesScreen
 import com.castor.app.onboarding.OnboardingPreferences
+import com.castor.app.onboarding.FeatureGuideScreen
 import com.castor.app.onboarding.OnboardingScreen
 import com.castor.app.onboarding.onboardingDataStore
 import com.castor.app.ui.HomeScreen
@@ -37,6 +38,7 @@ import com.castor.feature.messaging.ui.MessagingScreen
 import com.castor.feature.notifications.center.NotificationCenterScreen
 import com.castor.feature.recommendations.ui.RecommendationsScreen
 import com.castor.feature.recommendations.ui.WatchHistoryScreen
+import com.castor.app.hub.HubScreen
 import com.castor.core.inference.ui.ModelManagerScreen
 import com.castor.feature.reminders.ui.RemindersScreen
 import kotlinx.coroutines.flow.first
@@ -74,6 +76,7 @@ import java.nio.charset.StandardCharsets
  * - "focus"        — Pomodoro focus timer with terminal-styled UI
  * - "habits"       — habit tracker with terminal-styled completion tracking
  * - "settings"     — launcher settings (/etc/un-dios/config)
+ * - "feature_guide" — first-time walkthrough available anytime from settings
  * - "theme_selector" — terminal color theme picker (/etc/un-dios/themes.conf)
  * - "battery_optimization" — battery optimization guide (/etc/un-dios/battery-optimization.md)
  * - "model_manager" — download and manage on-device LLM models (/var/un-dios/models)
@@ -103,10 +106,15 @@ fun CastorNavHost(
     var startDestination by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
-        val isCompleted = context.onboardingDataStore.data
-            .map { it[OnboardingPreferences.ONBOARDING_COMPLETED] ?: false }
+        val shouldShowOnboarding = context.onboardingDataStore.data
+            .map { preferences ->
+                val isCompleted = preferences[OnboardingPreferences.ONBOARDING_COMPLETED] ?: false
+                val completedVersion = preferences[OnboardingPreferences.ONBOARDING_VERSION] ?: 0
+                !isCompleted || completedVersion < OnboardingPreferences.CURRENT_VERSION
+            }
             .first()
-        startDestination = if (isCompleted) "home" else "onboarding"
+
+        startDestination = if (shouldShowOnboarding) "onboarding" else "home"
     }
 
     // Wait until we know the start destination before rendering the NavHost.
@@ -283,6 +291,7 @@ fun CastorNavHost(
                     onNavigateToBatteryOptimization = { navController.navigate("battery_optimization") },
                     onNavigateToAbout = { navController.navigate("about") },
                     onNavigateToModelManager = { navController.navigate("model_manager") },
+                    onNavigateToFeatureGuide = { navController.navigate("feature_guide") },
                     themeManager = themeManager,
                     launcherPreferencesManager = launcherPreferencesManager,
                     securePreferences = securePreferences
@@ -290,8 +299,19 @@ fun CastorNavHost(
             }
         }
 
+        composable("feature_guide") {
+            FeatureGuideScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
         composable("model_manager") {
             ModelManagerScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable("hub") {
+            HubScreen(
                 onBack = { navController.popBackStack() }
             )
         }

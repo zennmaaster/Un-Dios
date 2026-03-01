@@ -7,6 +7,18 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+fun quoted(value: String): String {
+    return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+}
+
+fun stringProperty(name: String, default: String = ""): String {
+    return (project.findProperty(name) as? String)?.takeIf { it.isNotBlank() } ?: default
+}
+
+val oauthRedirectScheme = stringProperty("CASTOR_OAUTH_REDIRECT_SCHEME", "com.castor.app")
+val spotifyClientId = stringProperty("CASTOR_SPOTIFY_CLIENT_ID")
+val youtubeClientId = stringProperty("CASTOR_YOUTUBE_CLIENT_ID")
+
 android {
     namespace = "com.castor.feature.media"
     compileSdk = 35
@@ -17,9 +29,14 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
 
-        // Register the Spotify redirect URI scheme so the OS routes
-        // the OAuth callback back to the app.
-        manifestPlaceholders["spotifyRedirectScheme"] = "com.castor.app"
+        // OAuth values are configured through local/gradle properties.
+        manifestPlaceholders["oauthRedirectScheme"] = oauthRedirectScheme
+
+        buildConfigField("String", "OAUTH_REDIRECT_SCHEME", quoted(oauthRedirectScheme))
+        buildConfigField("String", "SPOTIFY_CLIENT_ID", quoted(spotifyClientId))
+        buildConfigField("String", "YOUTUBE_CLIENT_ID", quoted(youtubeClientId))
+        buildConfigField("String", "SPOTIFY_REDIRECT_URI", quoted("$oauthRedirectScheme://spotify-callback"))
+        buildConfigField("String", "YOUTUBE_REDIRECT_URI", quoted("$oauthRedirectScheme://google-callback"))
     }
 
     buildTypes {
@@ -43,6 +60,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

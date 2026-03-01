@@ -819,45 +819,42 @@ private fun AvailableModelCard(
 
         // Download state messages
         when (downloadState) {
-            is DownloadState.Completed -> {
+            is DownloadState.Complete -> {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "  [INSTALLED] ${downloadState.filePath.substringAfterLast("/")}",
+                    text = "  [INSTALLED] ${downloadState.file.name}",
                     style = mono.copy(
                         color = TerminalColors.Success,
                         fontSize = 10.sp
                     )
                 )
             }
-            is DownloadState.Failed -> {
+            is DownloadState.Error -> {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "  E: ${downloadState.error}",
+                    text = "  E: ${downloadState.message}",
                     style = mono.copy(
                         color = TerminalColors.Error,
                         fontSize = 10.sp
                     )
                 )
-                if (downloadState.retryable) {
-                    Text(
-                        text = "  Tap download to retry.",
-                        style = mono.copy(
-                            color = TerminalColors.Timestamp,
-                            fontSize = 10.sp
-                        ),
-                        modifier = Modifier.clickable { onDownload() }
-                    )
-                }
-            }
-            is DownloadState.Paused -> {
-                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "  [PAUSED] ${ModelManager.formatFileSize(downloadState.bytesDownloaded)} downloaded. Tap to resume.",
+                    text = "  Tap download to retry.",
                     style = mono.copy(
-                        color = TerminalColors.Warning,
+                        color = TerminalColors.Timestamp,
                         fontSize = 10.sp
                     ),
                     modifier = Modifier.clickable { onDownload() }
+                )
+            }
+            is DownloadState.Verifying -> {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "  [VERIFYING] Checking SHA-256 integrity...",
+                    style = mono.copy(
+                        color = TerminalColors.Warning,
+                        fontSize = 10.sp
+                    )
                 )
             }
             else -> { /* Idle or Downloading -- handled above */ }

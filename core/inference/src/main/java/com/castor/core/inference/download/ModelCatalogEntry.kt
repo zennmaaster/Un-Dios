@@ -36,7 +36,10 @@ data class ModelCatalogEntry(
     val contextLength: Int,
     val recommended: Boolean = false,
     val description: String
-)
+) {
+    /** Filename derived from the download URL for local storage. */
+    val filename: String get() = downloadUrl.substringAfterLast("/")
+}
 
 /**
  * Pre-configured catalog of recommended on-device models.
@@ -96,6 +99,21 @@ object ModelCatalog {
             recommended = true,
             description = "Best balance of quality and speed. Strong instruction following, " +
                 "multilingual support. Recommended for devices with 8+ GB RAM."
+        ),
+        ModelCatalogEntry(
+            id = "qwen25-7b-q4km",
+            displayName = "Qwen2.5 7B Instruct",
+            family = ModelFamily.QWEN25,
+            parameterCount = "7B",
+            quantization = "Q4_K_M",
+            fileSizeBytes = 4_831_838_208L, // ~4.5 GB
+            downloadUrl = "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf",
+            sha256 = "",
+            promptFormat = PromptFormat.CHATML,
+            contextLength = 32768,
+            recommended = false,
+            description = "High-quality model for complex tasks (reasoning, analysis, planning). " +
+                "Requires 8+ GB RAM. Best used as the COMPLEX tier model."
         ),
         ModelCatalogEntry(
             id = "phi3-mini-q4",

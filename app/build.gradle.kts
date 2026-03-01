@@ -20,7 +20,9 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // AppAuth OAuth redirect scheme (used by feature:media for Spotify OAuth)
-        manifestPlaceholders["appAuthRedirectScheme"] = "com.castor.app"
+        manifestPlaceholders["appAuthRedirectScheme"] =
+            (project.findProperty("CASTOR_OAUTH_REDIRECT_SCHEME") as? String)?.takeIf { it.isNotBlank() }
+                ?: "com.castor.app"
     }
 
     buildTypes {
@@ -83,6 +85,7 @@ dependencies {
     implementation(libs.lifecycle.runtime.ktx)
     implementation(libs.lifecycle.runtime.compose)
     implementation(libs.lifecycle.viewmodel.compose)
+    implementation(libs.lifecycle.service)
 
     // Hilt
     implementation(libs.hilt.android)

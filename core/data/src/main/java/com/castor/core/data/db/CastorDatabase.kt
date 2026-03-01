@@ -6,6 +6,7 @@ import com.castor.core.data.db.dao.BookSyncDao
 import com.castor.core.data.db.dao.ConversationDao
 import com.castor.core.data.db.dao.HabitDao
 import com.castor.core.data.db.dao.MediaQueueDao
+import com.castor.core.data.db.dao.MemoryDao
 import com.castor.core.data.db.dao.MessageDao
 import com.castor.core.data.db.dao.NoteDao
 import com.castor.core.data.db.dao.NotificationDao
@@ -18,6 +19,7 @@ import com.castor.core.data.db.entity.ConversationEntity
 import com.castor.core.data.db.entity.HabitCompletionEntity
 import com.castor.core.data.db.entity.HabitEntity
 import com.castor.core.data.db.entity.MediaQueueEntity
+import com.castor.core.data.db.entity.MemoryEntity
 import com.castor.core.data.db.entity.MessageEntity
 import com.castor.core.data.db.entity.NoteEntity
 import com.castor.core.data.db.entity.NotificationEntity
@@ -39,9 +41,10 @@ import com.castor.core.data.db.entity.WatchHistoryEntity
         NoteEntity::class,
         NotificationEntity::class,
         HabitEntity::class,
-        HabitCompletionEntity::class
+        HabitCompletionEntity::class,
+        MemoryEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 abstract class CastorDatabase : RoomDatabase() {
@@ -56,4 +59,5 @@ abstract class CastorDatabase : RoomDatabase() {
     abstract fun noteDao(): NoteDao
     abstract fun notificationDao(): NotificationDao
     abstract fun habitDao(): HabitDao
+    abstract fun memoryDao(): MemoryDao
 }

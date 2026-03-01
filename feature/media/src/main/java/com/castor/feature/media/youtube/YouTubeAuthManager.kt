@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import com.castor.core.security.SecurePreferences
+import com.castor.feature.media.BuildConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,7 +17,6 @@ import net.openid.appauth.AuthorizationResponse
 import net.openid.appauth.AuthorizationService
 import net.openid.appauth.AuthorizationServiceConfiguration
 import net.openid.appauth.ResponseTypeValues
-import net.openid.appauth.TokenRequest
 import net.openid.appauth.TokenResponse
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -35,6 +35,9 @@ class YouTubeAuthManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val securePreferences: SecurePreferences
 ) {
+    private val configuredClientId: String = BuildConfig.YOUTUBE_CLIENT_ID.trim()
+    private val configuredRedirectUriRaw: String = BuildConfig.YOUTUBE_REDIRECT_URI.trim()
+    private val configuredRedirectUri: Uri = Uri.parse(configuredRedirectUriRaw)
 
     companion object {
         // Google OAuth 2.0 endpoints
@@ -48,13 +51,6 @@ class YouTubeAuthManager @Inject constructor(
             "https://www.googleapis.com/auth/youtube.readonly"
         private const val SCOPE_YOUTUBE =
             "https://www.googleapis.com/auth/youtube"
-
-        // OAuth redirect
-        private val REDIRECT_URI = Uri.parse("com.castor.app://google-callback")
-
-        // Client ID placeholder -- must be replaced with the actual Android OAuth client ID
-        // from the Google Cloud Console. This is NOT a secret for Android (public client).
-        private const val CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"
 
         // SecurePreferences keys
         private const val KEY_AUTH_STATE = "youtube_auth_state"
@@ -80,17 +76,25 @@ class YouTubeAuthManager @Inject constructor(
     // Authorization flow
     // -------------------------------------------------------------------------
 
+    fun isConfigured(): Boolean {
+        return configuredClientId.isNotBlank() &&
+            configuredRedirectUriRaw.isNotBlank() &&
+            !configuredClientId.startsWith("YOUR_")
+    }
+
     /**
      * Build the authorization [Intent] to launch the Google sign-in page.
      * The caller should launch this via an ActivityResultLauncher and forward
      * the result to [handleAuthorizationResponse].
      */
-    fun buildAuthIntent(): Intent {
+    fun buildAuthIntent(): Intent? {
+        if (!isConfigured()) return null
+
         val authRequest = AuthorizationRequest.Builder(
             serviceConfig,
-            CLIENT_ID,
+            configuredClientId,
             ResponseTypeValues.CODE,
-            REDIRECT_URI
+            configuredRedirectUri
         )
             .setScope("$SCOPE_YOUTUBE_READONLY $SCOPE_YOUTUBE")
             .setCodeVerifier(null) // AppAuth generates a PKCE verifier automatically
@@ -108,6 +112,11 @@ class YouTubeAuthManager @Inject constructor(
      * @return true if authentication succeeded, false otherwise.
      */
     suspend fun handleAuthorizationResponse(data: Intent): Boolean {
+        if (!isConfigured()) {
+            _isAuthenticated.value = false
+            return false
+        }
+
         val response = AuthorizationResponse.fromIntent(data)
         val exception = AuthorizationException.fromIntent(data)
 
@@ -157,6 +166,7 @@ class YouTubeAuthManager @Inject constructor(
      * Returns null if the user is not authenticated.
      */
     suspend fun getValidAccessToken(): String? {
+        if (!isConfigured()) return null
         if (!authState.isAuthorized) return null
 
         // If the current access token needs refreshing, do so

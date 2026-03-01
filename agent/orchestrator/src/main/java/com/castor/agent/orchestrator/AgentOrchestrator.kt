@@ -6,6 +6,7 @@ import com.castor.core.common.model.MediaSource
 import com.castor.core.common.model.MessageSource
 import com.castor.core.inference.InferenceEngine
 import com.castor.core.inference.ModelManager
+import com.castor.core.inference.prompt.ConversationTurn as PromptTurn
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -35,7 +36,8 @@ class AgentOrchestrator @Inject constructor(
     private val taskPipeline: TaskPipeline,
     private val conversationManager: ConversationManager,
     private val eventBus: AgentEventBus,
-    private val healthMonitor: AgentHealthMonitor
+    private val healthMonitor: AgentHealthMonitor,
+    private val agentLoop: AgentLoop
 ) {
 
     companion object {
@@ -127,7 +129,7 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
      * In-memory record of recent commands for fast lookup (no DB round-trip).
      * Capped at [MAX_HISTORY_SIZE] entries.
      */
-    private val commandHistory = mutableListOf<CommandRecord>()
+    private val commandHistory = java.util.Collections.synchronizedList(mutableListOf<CommandRecord>())
 
     private data class CommandRecord(
         val input: String,
@@ -147,11 +149,9 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
     /**
      * Primary entry point: process user input end-to-end.
      *
-     * 1. Records the user turn in conversation history.
-     * 2. Checks for compound commands and delegates to [TaskPipeline] if needed.
-     * 3. Otherwise classifies intent and routes to the appropriate agent.
-     * 4. Records the assistant response in conversation history.
-     * 5. Tracks the command in the in-memory history ring.
+     * When the LLM is loaded, delegates to the [AgentLoop] for structured
+     * tool-calling and multi-turn reasoning. When the LLM is not loaded,
+     * falls back to keyword-based classification and routing.
      *
      * @param input The raw user input string.
      * @return A natural language response suitable for displaying to the user.
@@ -171,29 +171,27 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
         val intent: AgentIntent?
 
         try {
-            // Step 1: Check for compound command
-            if (taskPipeline.isCompoundCommand(input)) {
-                val result = taskPipeline.decomposeAndExecute(input)
-                response = result.summary
-                agentType = if (result.steps.isNotEmpty()) result.steps.first().step.agentType else AgentType.GENERAL
-                intent = null
-                // Record heartbeat for each agent involved
-                result.steps.forEach { stepResult ->
-                    healthMonitor.recordHeartbeat(stepResult.step.agentType)
+            // Use the agent loop when the LLM is loaded for structured tool calling
+            if (engine.isLoaded) {
+                val history = conversationManager.getRecentContext(limit = 6).map {
+                    PromptTurn(role = it.role, content = it.content)
                 }
+                val result = agentLoop.run(
+                    userInput = input,
+                    conversationHistory = history
+                )
+                response = result.response
+                agentType = AgentType.GENERAL
+                intent = null
+                healthMonitor.recordHeartbeat(AgentType.GENERAL)
             } else {
-                // Step 2: Classify intent
+                // Fallback: keyword-based classification + routing (no LLM)
                 intent = classifyIntent(input)
                 agentType = intentToAgentType(intent)
-
-                // Step 3: Route to agent
                 response = routeIntent(intent, input)
-
-                // Record heartbeat for the agent that handled the request
                 healthMonitor.recordHeartbeat(agentType)
             }
         } catch (e: Exception) {
-            // Record the error for the agent that would have handled it
             val failedAgentType = try {
                 intentToAgentType(classifyIntent(input))
             } catch (_: Exception) {
@@ -201,23 +199,12 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
             }
             healthMonitor.recordError(failedAgentType, e.message ?: "Unknown error")
 
-            // Fallback: generate a general response or return error message
             val fallbackResponse = try {
-                if (engine.isLoaded) {
-                    engine.generate(
-                        prompt = input,
-                        systemPrompt = ROUTER_SYSTEM_PROMPT,
-                        maxTokens = PROCESS_MAX_TOKENS,
-                        temperature = 0.7f
-                    )
-                } else {
-                    GENERAL_ERROR_MSG
-                }
+                processInputFallback(input)
             } catch (e2: Exception) {
                 GENERAL_ERROR_MSG
             }
 
-            // Record assistant response even on error
             conversationManager.addAssistantTurn(fallbackResponse, AgentType.GENERAL)
             trackCommand(input, null, AgentType.GENERAL, fallbackResponse)
             return fallbackResponse
@@ -231,6 +218,15 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
         trackCommand(input, intent, agentType, response)
 
         return response
+    }
+
+    /**
+     * Fallback processing when the agent loop fails or the LLM is unavailable.
+     * Uses keyword-based classification and routing.
+     */
+    private suspend fun processInputFallback(input: String): String {
+        val intent = classifyIntent(input)
+        return routeIntent(intent, input)
     }
 
     /**
@@ -306,8 +302,10 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
      * Get the in-memory command history (most recent first).
      */
     fun getRecentCommandSummaries(limit: Int = 10): List<String> {
-        return commandHistory.takeLast(limit).reversed().map {
-            "[${it.agentType}] ${it.input} -> ${it.response.take(100)}"
+        return synchronized(commandHistory) {
+            commandHistory.takeLast(limit).reversed().map {
+                "[${it.agentType}] ${it.input} -> ${it.response.take(100)}"
+            }
         }
     }
 
@@ -727,17 +725,19 @@ Respond with ONLY the category name (e.g., "SEND_MESSAGE"), nothing else."""
         agentType: AgentType,
         response: String
     ) {
-        commandHistory.add(
-            CommandRecord(
-                input = input,
-                intent = intent,
-                agentType = agentType,
-                response = response
+        synchronized(commandHistory) {
+            commandHistory.add(
+                CommandRecord(
+                    input = input,
+                    intent = intent,
+                    agentType = agentType,
+                    response = response
+                )
             )
-        )
-        // Trim to max size
-        while (commandHistory.size > maxHistorySize) {
-            commandHistory.removeAt(0)
+            // Trim to max size
+            while (commandHistory.size > maxHistorySize) {
+                commandHistory.removeAt(0)
+            }
         }
     }
 

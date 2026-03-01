@@ -16,6 +16,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 
 /**
@@ -138,8 +139,10 @@ class AgentService : LifecycleService() {
         }
         systemEventReceiver = null
 
-        // Unload the model and emit lifecycle event
-        lifecycleScope.launch {
+        // Unload the model synchronously before the scope is cancelled.
+        // lifecycleScope.launch would be cancelled by super.onDestroy(),
+        // so we use runBlocking to ensure the model is actually freed.
+        runBlocking {
             eventBus.emit(AgentEvent.ModelUnloaded())
             modelManager.unloadModel()
         }

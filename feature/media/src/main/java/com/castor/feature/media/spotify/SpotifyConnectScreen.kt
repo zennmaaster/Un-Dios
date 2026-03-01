@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -88,6 +89,7 @@ fun SpotifyConnectScreen(
     viewModel: SpotifyConnectViewModel = hiltViewModel()
 ) {
     val isConnected by viewModel.isConnected.collectAsStateWithLifecycle()
+    val isConfigured = viewModel.authManager.isConfigured()
 
     val authLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -180,6 +182,14 @@ fun SpotifyConnectScreen(
             // ----- Connection status indicator -----
             ConnectionStatusIndicator(isConnected = isConnected)
 
+            if (!isConfigured) {
+                Spacer(modifier = Modifier.height(16.dp))
+                OAuthSetupRequiredCard(
+                    service = "Spotify",
+                    docsPath = "docs/SETUP.md"
+                )
+            }
+
             Spacer(modifier = Modifier.height(32.dp))
 
             // ----- Action button -----
@@ -191,8 +201,11 @@ fun SpotifyConnectScreen(
                 Button(
                     onClick = {
                         val intent = viewModel.authManager.createAuthIntent()
-                        authLauncher.launch(intent)
+                        if (intent != null) {
+                            authLauncher.launch(intent)
+                        }
                     },
+                    enabled = isConfigured,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = SpotifyGreen,
                         contentColor = Color.Black
@@ -209,7 +222,7 @@ fun SpotifyConnectScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Connect Spotify",
+                        text = if (isConfigured) "Connect Spotify" else "Setup required in docs",
                         style = TextStyle(
                             fontFamily = FontFamily.Monospace,
                             fontSize = 15.sp,
@@ -311,6 +324,45 @@ private fun ConnectionStatusIndicator(isConnected: Boolean) {
 }
 
 @Composable
+private fun OAuthSetupRequiredCard(
+    service: String,
+    docsPath: String
+) {
+    Row(
+        verticalAlignment = Alignment.Top,
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = 1.dp,
+                color = TerminalColors.Warning.copy(alpha = 0.45f),
+                shape = RoundedCornerShape(8.dp)
+            )
+            .background(
+                color = TerminalColors.Warning.copy(alpha = 0.08f),
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(12.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Default.WarningAmber,
+            contentDescription = null,
+            tint = TerminalColors.Warning,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "$service is not configured in this build yet.\nAdd OAuth values in local.properties, then follow $docsPath.",
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                color = TerminalColors.Output,
+                lineHeight = 16.sp
+            )
+        )
+    }
+}
+
+@Composable
 private fun ScopesInfo() {
     Column(
         modifier = Modifier
@@ -364,4 +416,3 @@ private fun ScopesInfo() {
         }
     }
 }
-

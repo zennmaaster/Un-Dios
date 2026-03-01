@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import com.castor.core.security.SecurePreferences
+import com.castor.feature.media.BuildConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,7 +15,6 @@ import net.openid.appauth.AuthorizationRequest
 import net.openid.appauth.AuthorizationResponse
 import net.openid.appauth.AuthorizationService
 import net.openid.appauth.AuthorizationServiceConfiguration
-import net.openid.appauth.ClientSecretBasic
 import net.openid.appauth.ResponseTypeValues
 import net.openid.appauth.TokenRequest
 import javax.inject.Inject
@@ -45,21 +45,35 @@ class SpotifyAuthManager @Inject constructor(
         AuthorizationService(context)
     }
 
+    private val configuredClientId: String = BuildConfig.SPOTIFY_CLIENT_ID.trim()
+    private val configuredRedirectUri: String = BuildConfig.SPOTIFY_REDIRECT_URI.trim()
+
     // -----------------------------------------------------------------
     // Public API
     // -----------------------------------------------------------------
+
+    /**
+     * Returns true when OAuth has been configured with real credentials.
+     */
+    fun isConfigured(): Boolean {
+        return configuredClientId.isNotBlank() &&
+            configuredRedirectUri.isNotBlank() &&
+            !configuredClientId.startsWith("YOUR_")
+    }
 
     /**
      * Creates an [Intent] that launches the Spotify authorization page in a browser.
      * The caller should start this intent with an activity result launcher.
      * Uses PKCE (code_verifier / code_challenge) automatically via AppAuth.
      */
-    fun createAuthIntent(): Intent {
+    fun createAuthIntent(): Intent? {
+        if (!isConfigured()) return null
+
         val authRequest = AuthorizationRequest.Builder(
             serviceConfig,
-            CLIENT_ID,
+            configuredClientId,
             ResponseTypeValues.CODE,
-            Uri.parse(REDIRECT_URI)
+            Uri.parse(configuredRedirectUri)
         )
             .setScopes(SCOPES)
             .build()
@@ -73,6 +87,11 @@ class SpotifyAuthManager @Inject constructor(
      * and persists them in secure storage.
      */
     fun handleAuthResponse(intent: Intent) {
+        if (!isConfigured()) {
+            _isAuthenticated.value = false
+            return
+        }
+
         val response = AuthorizationResponse.fromIntent(intent)
         val exception = net.openid.appauth.AuthorizationException.fromIntent(intent)
 
@@ -105,6 +124,8 @@ class SpotifyAuthManager @Inject constructor(
      * stored or the refresh fails.
      */
     suspend fun getAccessToken(): String? {
+        if (!isConfigured()) return null
+
         val accessToken = securePreferences.getString(KEY_ACCESS_TOKEN)
         if (accessToken != null && !isTokenExpired()) {
             return accessToken
@@ -138,10 +159,10 @@ class SpotifyAuthManager @Inject constructor(
         val refreshToken = securePreferences.getString(KEY_REFRESH_TOKEN)
             ?: return null
 
-        val tokenRequest = TokenRequest.Builder(serviceConfig, CLIENT_ID)
+        val tokenRequest = TokenRequest.Builder(serviceConfig, configuredClientId)
             .setGrantType("refresh_token")
             .setRefreshToken(refreshToken)
-            .setRedirectUri(Uri.parse(REDIRECT_URI))
+            .setRedirectUri(Uri.parse(configuredRedirectUri))
             .build()
 
         return suspendCancellableCoroutine { continuation ->
@@ -189,16 +210,6 @@ class SpotifyAuthManager @Inject constructor(
         /** Spotify OAuth endpoints */
         private const val AUTHORIZATION_ENDPOINT = "https://accounts.spotify.com/authorize"
         private const val TOKEN_ENDPOINT = "https://accounts.spotify.com/api/token"
-
-        /**
-         * The OAuth client ID registered in the Spotify Developer Dashboard.
-         * In a production app this would be injected via BuildConfig or a
-         * secrets store; hardcoded here as a placeholder.
-         */
-        const val CLIENT_ID = "YOUR_SPOTIFY_CLIENT_ID"
-
-        /** Deep-link redirect URI registered in the Spotify Developer Dashboard. */
-        const val REDIRECT_URI = "com.castor.app://spotify-callback"
 
         /** OAuth scopes required by Un-Dios for playback control and library access. */
         private val SCOPES = listOf(

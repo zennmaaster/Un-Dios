@@ -7,9 +7,10 @@ import androidx.lifecycle.viewModelScope
 import com.castor.core.inference.LocalModelInfo
 import com.castor.core.inference.ModelManager
 import com.castor.core.inference.download.DownloadState
-import com.castor.core.inference.download.ModelCatalog
 import com.castor.core.inference.download.ModelCatalogEntry
+import com.castor.core.inference.download.ModelCatalog
 import com.castor.core.inference.download.ModelDownloadManager
+import java.io.File
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -78,20 +79,16 @@ class ModelManagerViewModel @Inject constructor(
     /** Active download jobs, keyed by catalog entry ID. Used for cancellation. */
     private val downloadJobs = mutableMapOf<String, Job>()
 
+    /** Cached local model list, refreshed when models change. */
+    private val _localModels = MutableStateFlow<List<LocalModelInfo>>(emptyList())
+
     val uiState: StateFlow<ModelManagerUiState> = combine(
         modelManager.modelState,
         _downloadStates,
         _isRefreshing,
         _storageInfo,
         _selectedTab
-    ) { values ->
-        val modelState = values[0] as ModelManager.ModelState
-        @Suppress("UNCHECKED_CAST")
-        val downloadStates = values[1] as Map<String, DownloadState>
-        val isRefreshing = values[2] as Boolean
-        val storageInfo = values[3] as StorageInfo
-        val selectedTab = values[4] as Int
-
+    ) { modelState, downloadStates, isRefreshing, storageInfo, selectedTab ->
         val currentModelName = when (modelState) {
             is ModelManager.ModelState.Loaded -> modelState.modelName
             is ModelManager.ModelState.Loading -> modelState.modelName
@@ -99,7 +96,7 @@ class ModelManagerViewModel @Inject constructor(
         }
 
         ModelManagerUiState(
-            localModels = modelManager.getAvailableModelInfo(),
+            localModels = _localModels.value,
             catalogEntries = ModelCatalog.entries,
             downloadStates = downloadStates,
             currentModelName = currentModelName,
@@ -140,6 +137,7 @@ class ModelManagerViewModel @Inject constructor(
         _isRefreshing.value = true
         viewModelScope.launch {
             // Force re-read of model directory
+            _localModels.value = modelManager.getAvailableModelInfo()
             val states = ModelCatalog.entries.associate { entry ->
                 entry.id to downloadManager.getDownloadState(entry.id).value
             }

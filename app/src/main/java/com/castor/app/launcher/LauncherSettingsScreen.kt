@@ -82,6 +82,7 @@ fun LauncherSettingsScreen(
     onNavigateToBatteryOptimization: () -> Unit = {},
     onNavigateToAbout: () -> Unit = {},
     onNavigateToModelManager: () -> Unit = {},
+    onNavigateToFeatureGuide: () -> Unit = {},
     themeManager: ThemeManager? = null,
     lockScreenViewModel: LockScreenViewModel = hiltViewModel(),
     launcherPreferencesManager: LauncherPreferencesManager,
@@ -482,6 +483,14 @@ fun LauncherSettingsScreen(
                 )
             }
 
+            item {
+                SettingsActionRow(
+                    key = "system.walkthrough",
+                    label = "First-time walkthrough",
+                    description = "Simple guide for what each core feature does and how to use it",
+                    onClick = onNavigateToFeatureGuide
+                )
+            }
             item {
                 SettingsActionRow(
                     key = "system.reset",

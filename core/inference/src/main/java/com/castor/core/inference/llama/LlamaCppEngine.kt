@@ -1,14 +1,19 @@
 package com.castor.core.inference.llama
 
+import android.content.Context
 import com.castor.core.inference.InferenceConfig
 import com.castor.core.inference.InferenceEngine
 import com.castor.core.inference.prompt.ModelFamily
 import com.castor.core.inference.prompt.PromptFormat
 import com.castor.core.inference.prompt.PromptFormatter
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -16,89 +21,103 @@ import javax.inject.Singleton
 /**
  * LLM inference engine backed by llama.cpp via JNI.
  *
- * The native library (libllama.so) must be compiled from the llama.cpp source
- * using the Android NDK and included in the app's jniLibs directory.
- *
+ * Loads GGUF models and runs inference entirely on-device.
  * Supports multiple prompt formats via [PromptFormatter], with ChatML (Qwen2.5)
- * as the default. The prompt format is determined from the [InferenceConfig]
- * or auto-detected from the model filename.
+ * as the default.
  *
- * For initial development, this class provides a mock implementation.
- * Replace the method bodies with actual JNI calls once the native lib is built.
+ * Falls back to mock responses if the native library is unavailable.
  */
 @Singleton
-class LlamaCppEngine @Inject constructor() : InferenceEngine {
+class LlamaCppEngine @Inject constructor(
+    @ApplicationContext private val context: Context
+) : InferenceEngine {
 
-    private var nativeHandle: Long = 0L
-    private var config: InferenceConfig? = null
-    private var _isLoaded = false
+    @Volatile private var nativeHandle: Long = 0L
+    @Volatile private var config: InferenceConfig? = null
+    @Volatile private var _isLoaded = false
+    @Volatile private var nativeAvailable = false
+
+    /** Mutex to serialize native JNI calls (only one load/unload/generate at a time). */
+    private val nativeMutex = Mutex()
 
     override val isLoaded: Boolean get() = _isLoaded
     override val modelName: String get() = config?.modelPath?.substringAfterLast("/") ?: "none"
 
-    /**
-     * The currently active prompt format. Defaults to ChatML for Qwen2.5 models.
-     * Updated when a model is loaded based on the config or filename detection.
-     */
     val promptFormat: PromptFormat get() = config?.promptFormat ?: PromptFormat.CHATML
-
-    /**
-     * The currently active model family.
-     */
     val modelFamily: ModelFamily get() = config?.modelFamily ?: ModelFamily.QWEN25
 
-    override suspend fun loadModel(modelPath: String) = withContext(Dispatchers.IO) {
-        if (_isLoaded) unloadModel()
-
-        // Auto-detect prompt format and model family from filename
-        val detectedFormat = PromptFormatter.detectFromFilename(modelPath)
-        val detectedFamily = PromptFormatter.detectFamilyFromFilename(modelPath)
-
-        config = InferenceConfig(
-            modelPath = modelPath,
-            promptFormat = detectedFormat,
-            modelFamily = detectedFamily,
-            contextSize = detectedFamily.defaultContextLength.coerceAtMost(4096),
-            flashAttention = detectedFamily == ModelFamily.QWEN25
-        )
-
-        // TODO: Replace with JNI call:
-        // nativeHandle = nativeLoadModel(
-        //     modelPath,
-        //     config!!.contextSize,
-        //     config!!.threads,
-        //     config!!.gpuLayers,
-        //     config!!.useMmap,
-        //     config!!.flashAttention
-        // )
-        _isLoaded = true
+    init {
+        try {
+            System.loadLibrary("undios-llama")
+            val nativeLibDir = context.applicationInfo.nativeLibraryDir
+            nativeInit(nativeLibDir)
+            nativeAvailable = true
+        } catch (e: UnsatisfiedLinkError) {
+            nativeAvailable = false
+        }
     }
 
-    /**
-     * Load model with an explicit configuration.
-     * Allows callers to override auto-detected settings.
-     */
-    suspend fun loadModelWithConfig(inferenceConfig: InferenceConfig) = withContext(Dispatchers.IO) {
-        if (_isLoaded) unloadModel()
-        config = inferenceConfig
+    override suspend fun loadModel(modelPath: String) = withContext(Dispatchers.IO) {
+        nativeMutex.withLock {
+            if (_isLoaded) unloadModelInternal()
 
-        // TODO: Replace with JNI call:
-        // nativeHandle = nativeLoadModel(
-        //     inferenceConfig.modelPath,
-        //     inferenceConfig.contextSize,
-        //     inferenceConfig.threads,
-        //     inferenceConfig.gpuLayers,
-        //     inferenceConfig.useMmap,
-        //     inferenceConfig.flashAttention
-        // )
-        _isLoaded = true
+            val detectedFormat = PromptFormatter.detectFromFilename(modelPath)
+            val detectedFamily = PromptFormatter.detectFamilyFromFilename(modelPath)
+
+            config = InferenceConfig(
+                modelPath = modelPath,
+                promptFormat = detectedFormat,
+                modelFamily = detectedFamily,
+                contextSize = detectedFamily.defaultContextLength.coerceAtMost(4096),
+                flashAttention = detectedFamily == ModelFamily.QWEN25
+            )
+
+            if (nativeAvailable) {
+                val cfg = config!!
+                nativeHandle = nativeLoadModel(
+                    cfg.modelPath, cfg.contextSize, cfg.threads,
+                    cfg.gpuLayers, cfg.useMmap, cfg.flashAttention
+                )
+                _isLoaded = nativeHandle != 0L
+                if (!_isLoaded) {
+                    throw RuntimeException("Failed to load model: $modelPath")
+                }
+            } else {
+                _isLoaded = true // Mock mode
+            }
+        }
+    }
+
+    suspend fun loadModelWithConfig(inferenceConfig: InferenceConfig) = withContext(Dispatchers.IO) {
+        nativeMutex.withLock {
+            if (_isLoaded) unloadModelInternal()
+            config = inferenceConfig
+
+            if (nativeAvailable) {
+                nativeHandle = nativeLoadModel(
+                    inferenceConfig.modelPath, inferenceConfig.contextSize,
+                    inferenceConfig.threads, inferenceConfig.gpuLayers,
+                    inferenceConfig.useMmap, inferenceConfig.flashAttention
+                )
+                _isLoaded = nativeHandle != 0L
+            } else {
+                _isLoaded = true
+            }
+        }
     }
 
     override suspend fun unloadModel() = withContext(Dispatchers.IO) {
-        if (nativeHandle != 0L) {
-            // TODO: nativeFreeModel(nativeHandle)
-            nativeHandle = 0L
+        nativeMutex.withLock {
+            unloadModelInternal()
         }
+    }
+
+    /** Internal unload without acquiring the mutex (caller must hold it). */
+    private fun unloadModelInternal() {
+        if (nativeHandle != 0L && nativeAvailable) {
+            nativeFreeModel(nativeHandle)
+        }
+        nativeHandle = 0L
         _isLoaded = false
     }
 
@@ -111,16 +130,20 @@ class LlamaCppEngine @Inject constructor() : InferenceEngine {
         check(_isLoaded) { "Model not loaded. Call loadModel() first." }
 
         val fullPrompt = buildPrompt(systemPrompt, prompt)
-        // TODO: Replace with JNI call:
-        // return@withContext nativeGenerate(
-        //     nativeHandle, fullPrompt, maxTokens, temperature,
-        //     config!!.topP, config!!.topK, config!!.repeatPenalty
-        // )
 
-        // Mock response for development
-        val modelInfo = config?.let { "${it.modelFamily.displayName} (${it.promptFormat.name})" } ?: "unknown"
-        "[Castor AI | $modelInfo] I received your message: \"$prompt\". " +
-            "The on-device LLM will be connected once llama.cpp native library is compiled via NDK."
+        if (nativeAvailable && nativeHandle != 0L) {
+            nativeMutex.withLock {
+                val cfg = config!!
+                nativeGenerate(
+                    nativeHandle, fullPrompt, maxTokens, temperature,
+                    cfg.topP, cfg.topK, cfg.repeatPenalty
+                )
+            }
+        } else {
+            val modelInfo = config?.let { "${it.modelFamily.displayName} (${it.promptFormat.name})" } ?: "unknown"
+            "[Un-Dios AI | $modelInfo] I received your message: \"$prompt\". " +
+                "Native library not available — running in mock mode."
+        }
     }
 
     override fun generateStream(
@@ -128,66 +151,97 @@ class LlamaCppEngine @Inject constructor() : InferenceEngine {
         systemPrompt: String,
         maxTokens: Int,
         temperature: Float
-    ): Flow<String> = flow {
+    ): Flow<String> = callbackFlow {
         check(_isLoaded) { "Model not loaded. Call loadModel() first." }
 
         val fullPrompt = buildPrompt(systemPrompt, prompt)
-        // TODO: Replace with streaming JNI callback:
-        // nativeGenerateStream(
-        //     nativeHandle, fullPrompt, maxTokens, temperature,
-        //     config!!.topP, config!!.topK, config!!.repeatPenalty
-        // ) { token -> emit(token) }
 
-        // Mock streaming for development
-        val modelInfo = config?.let { "${it.modelFamily.displayName}" } ?: "local"
-        val response = "[Castor | $modelInfo] Processing your request locally..."
-        for (word in response.split(" ")) {
-            emit("$word ")
-            kotlinx.coroutines.delay(50)
+        if (nativeAvailable && nativeHandle != 0L) {
+            nativeMutex.withLock {
+                val cfg = config!!
+                val callback = object : LlamaStreamCallback {
+                    override fun onToken(token: String) {
+                        trySend(token)
+                    }
+                }
+                nativeGenerateStream(
+                    nativeHandle, fullPrompt, maxTokens, temperature,
+                    cfg.topP, cfg.topK, cfg.repeatPenalty, callback
+                )
+            }
+        } else {
+            val response = "[Un-Dios | mock] Processing locally..."
+            for (word in response.split(" ")) {
+                send("$word ")
+                kotlinx.coroutines.delay(50)
+            }
         }
+        close()
+        awaitClose()
     }.flowOn(Dispatchers.IO)
 
+    override suspend fun generateRaw(
+        formattedPrompt: String,
+        maxTokens: Int,
+        temperature: Float
+    ): String = withContext(Dispatchers.IO) {
+        check(_isLoaded) { "Model not loaded. Call loadModel() first." }
+
+        if (nativeAvailable && nativeHandle != 0L) {
+            nativeMutex.withLock {
+                val cfg = config!!
+                nativeGenerate(
+                    nativeHandle, formattedPrompt, maxTokens, temperature,
+                    cfg.topP, cfg.topK, cfg.repeatPenalty
+                )
+            }
+        } else {
+            val modelInfo = config?.let { "${it.modelFamily.displayName} (${it.promptFormat.name})" } ?: "unknown"
+            "[Un-Dios AI | $modelInfo] Raw prompt received (${formattedPrompt.length} chars). " +
+                "Native library not available — running in mock mode."
+        }
+    }
+
     override suspend fun tokenize(text: String): List<Int> = withContext(Dispatchers.IO) {
-        // TODO: nativeTokenize(nativeHandle, text)
-        text.split(" ").mapIndexed { i, _ -> i }
+        if (nativeAvailable && nativeHandle != 0L) {
+            nativeTokenize(nativeHandle, text).toList()
+        } else {
+            text.split(" ").mapIndexed { i, _ -> i }
+        }
     }
 
     override suspend fun getTokenCount(text: String): Int = tokenize(text).size
 
-    /**
-     * Build the full prompt string using the configured [PromptFormat].
-     *
-     * Delegates to [PromptFormatter] which handles the specific token
-     * wrapping for each model family (ChatML for Qwen2.5, Phi-3 tags, etc.).
-     */
     private fun buildPrompt(systemPrompt: String, userPrompt: String): String {
         val format = config?.promptFormat ?: PromptFormat.CHATML
         return PromptFormatter.formatPrompt(format, systemPrompt, userPrompt)
     }
 
-    // JNI native method declarations — uncomment when native lib is ready
-    // private external fun nativeLoadModel(
-    //     path: String, contextSize: Int, threads: Int,
-    //     gpuLayers: Int, useMmap: Boolean, flashAttention: Boolean
-    // ): Long
-    // private external fun nativeFreeModel(handle: Long)
-    // private external fun nativeGenerate(
-    //     handle: Long, prompt: String, maxTokens: Int, temperature: Float,
-    //     topP: Float, topK: Int, repeatPenalty: Float
-    // ): String
-    // private external fun nativeGenerateStream(
-    //     handle: Long, prompt: String, maxTokens: Int, temperature: Float,
-    //     topP: Float, topK: Int, repeatPenalty: Float, callback: (String) -> Unit
-    // )
-    // private external fun nativeTokenize(handle: Long, text: String): IntArray
+    // JNI native methods
+    private external fun nativeInit(nativeLibDir: String)
+    private external fun nativeLoadModel(
+        path: String, contextSize: Int, threads: Int,
+        gpuLayers: Int, useMmap: Boolean, flashAttention: Boolean
+    ): Long
+    private external fun nativeFreeModel(handle: Long)
+    private external fun nativeGenerate(
+        handle: Long, prompt: String, maxTokens: Int, temperature: Float,
+        topP: Float, topK: Int, repeatPenalty: Float
+    ): String
+    private external fun nativeGenerateStream(
+        handle: Long, prompt: String, maxTokens: Int, temperature: Float,
+        topP: Float, topK: Int, repeatPenalty: Float, callback: LlamaStreamCallback
+    )
+    private external fun nativeTokenize(handle: Long, text: String): IntArray
+    private external fun nativeShutdown()
 
-    companion object {
-        init {
-            try {
-                System.loadLibrary("llama")
-            } catch (e: UnsatisfiedLinkError) {
-                // Native library not yet available — mock mode
-            }
+    /**
+     * Shut down the llama.cpp backend. Call once at application exit.
+     * After this call, no further native operations are valid.
+     */
+    fun shutdown() {
+        if (nativeAvailable) {
+            nativeShutdown()
         }
     }
 }

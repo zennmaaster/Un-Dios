@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
@@ -17,11 +18,13 @@ import com.castor.app.desktop.layout.DesktopHomeScreen
 import com.castor.app.desktop.window.WindowManager
 import com.castor.app.launcher.LauncherPreferencesManager
 import com.castor.app.navigation.CastorNavHost
+import com.castor.app.onboarding.SetupReadinessManager
 import com.castor.app.settings.ThemeManager
 import com.castor.core.security.SecurePreferences
 import com.castor.core.ui.theme.CastorTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlinx.coroutines.launch
 
 /**
  * Main Activity for the Un-Dios launcher.
@@ -61,6 +64,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var securePreferences: SecurePreferences
 
+    @Inject
+    lateinit var setupReadinessManager: SetupReadinessManager
+
     private val displayModeViewModel: DisplayModeViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -69,6 +75,10 @@ class MainActivity : ComponentActivity() {
 
         // Start monitoring for external display connections
         displayModeViewModel.startMonitoring()
+
+        lifecycleScope.launch {
+            setupReadinessManager.maybeRefreshIfStale()
+        }
 
         setContent {
             // Collect the active theme so that CastorTheme recomposes

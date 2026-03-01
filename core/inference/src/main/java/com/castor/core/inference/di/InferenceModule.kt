@@ -1,9 +1,9 @@
 package com.castor.core.inference.di
 
 import com.castor.core.inference.InferenceEngine
+import com.castor.core.inference.TieredInferenceEngine
 import com.castor.core.inference.embedding.EmbeddingEngine
 import com.castor.core.inference.embedding.LlamaEmbeddingEngine
-import com.castor.core.inference.llama.LlamaCppEngine
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -16,7 +16,7 @@ abstract class InferenceModule {
 
     @Binds
     @Singleton
-    abstract fun bindInferenceEngine(impl: LlamaCppEngine): InferenceEngine
+    abstract fun bindInferenceEngine(impl: TieredInferenceEngine): InferenceEngine
 
     @Binds
     @Singleton

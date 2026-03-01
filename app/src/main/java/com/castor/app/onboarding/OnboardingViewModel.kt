@@ -36,15 +36,16 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class OnboardingViewModel @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val setupReadinessManager: SetupReadinessManager
 ) : ViewModel() {
 
-    /** Current step index in the onboarding wizard (0-7). */
+    /** Current step index in the onboarding wizard (0-8). */
     private val _currentStep = MutableStateFlow(0)
     val currentStep: StateFlow<Int> = _currentStep.asStateFlow()
 
     /** Total number of steps in the onboarding wizard. */
-    val totalSteps = 8 // Steps 0 through 7
+    val totalSteps = 9 // Steps 0 through 8
 
     /** Observable permission statuses, refreshed on each lifecycle resume. */
     private val _permissionStatuses = MutableStateFlow(PermissionStatuses())
@@ -218,6 +219,8 @@ class OnboardingViewModel @Inject constructor(
                 preferences[OnboardingPreferences.ONBOARDING_VERSION] =
                     OnboardingPreferences.CURRENT_VERSION
             }
+
+            setupReadinessManager.refresh()
         }
     }
 

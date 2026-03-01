@@ -86,8 +86,8 @@ import kotlinx.coroutines.launch
  * 4. Storage access
  * 5. Battery optimization
  * 6. Calendar access
- * 7. Setup complete summary
- *
+ * 7. Feature walkthrough
+ * 8. Setup complete summary
  * All text uses [FontFamily.Monospace] and colors from [TerminalColors] to
  * maintain the Catppuccin Mocha terminal aesthetic.
  *
@@ -288,7 +288,15 @@ fun OnboardingScreen(
                         viewModel.refreshPermissionStatuses()
                     }
                 )
-                7 -> SetupCompleteStep(
+                7 -> FeatureWalkthroughStep(
+                    onContinue = {
+                        coroutineScope.launch {
+                            viewModel.nextStep()
+                            pagerState.animateScrollToPage(8)
+                        }
+                    }
+                )
+                8 -> SetupCompleteStep(
                     permissionStatuses = permissionStatuses,
                     onLaunch = {
                         viewModel.completeOnboarding()
@@ -746,11 +754,11 @@ private fun CalendarAccessStep(
 }
 
 // =============================================================================
-// Step 7 — Setup Complete
+// Step 8 — Setup Complete
 // =============================================================================
 
 /**
- * Final onboarding step showing a summary of all granted and skipped permissions.
+ * Final onboarding step shown after the feature walkthrough, summarizing granted and skipped permissions.
  *
  * Displays a green checkmark or yellow warning for each permission category.
  * The launch button marks onboarding as complete and navigates to the home screen.
@@ -826,7 +834,7 @@ private fun SetupCompleteStep(
 
         // Hint
         Text(
-            text = "You can change these anytime in Settings.",
+            text = "You can reopen the step-by-step walkthrough anytime in Settings.",
             style = TextStyle(
                 fontFamily = FontFamily.Monospace,
                 fontSize = 12.sp,
@@ -839,7 +847,7 @@ private fun SetupCompleteStep(
 
         // Launch button
         TerminalButton(
-            text = "$ launch-desktop",
+            text = "$ open-home",
             onClick = onLaunch,
             modifier = Modifier.fillMaxWidth()
         )

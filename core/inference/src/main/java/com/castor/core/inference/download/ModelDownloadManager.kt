@@ -2,46 +2,96 @@ package com.castor.core.inference.download
 
 import android.content.Context
 import android.util.Log
+import com.castor.core.inference.ModelManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
+ * Sealed class representing the current state of a model download.
+ *
+ * Observed by the download screen UI to display progress bars,
+ * completion status, or error messages.
+ */
+sealed class DownloadState {
+
+    /** No download in progress for this model. */
+    data object Idle : DownloadState()
+
+    /**
+     * Model is currently being downloaded.
+     *
+     * @param progress Download progress as a fraction (0.0 to 1.0)
+     * @param bytesDownloaded Number of bytes downloaded so far
+     * @param totalBytes Total expected file size in bytes
+     */
+    data class Downloading(
+        val progress: Float,
+        val bytesDownloaded: Long,
+        val totalBytes: Long
+    ) : DownloadState()
+
+    /** Download completed, integrity verified. Awaiting rename to final path. */
+    data object Verifying : DownloadState()
+
+    /**
+     * Download completed successfully.
+     *
+     * @param file The final GGUF file on device
+     */
+    data class Complete(val file: File) : DownloadState()
+
+    /**
+     * Download failed with an error.
+     *
+     * @param message Human-readable error description
+     */
+    data class Error(val message: String) : DownloadState()
+}
+
+/**
  * Manages downloading GGUF model files from HuggingFace to the device.
  *
- * All downloads are standard HTTPS GET requests — no authentication,
+ * All downloads are standard HTTPS GET requests -- no authentication,
  * no telemetry, no data sent to any server. The only network traffic
  * is downloading the model weights file.
  *
  * Features:
- * - Progress tracking (bytes downloaded / total)
- * - Resume support for interrupted downloads (via HTTP Range header)
+ * - Per-model progress tracking via [StateFlow]
+ * - Resume support for interrupted downloads (HTTP Range header)
  * - SHA-256 integrity verification after download
- * - Saves to the app's private `filesDir/models/` directory
- * - Thread-safe download state management via [StateFlow]
+ * - Downloads to `.part` file then renames to final path on success
+ * - Thread-safe state management with [ConcurrentHashMap]
+ * - Cancellation support for in-progress downloads
  *
- * Uses OkHttp for the HTTP download, consistent with the rest of the codebase.
+ * Uses OkHttp for HTTP, consistent with the rest of the codebase.
+ * Writes to [ModelManager.modelsDir] (app-private `filesDir/models/`).
  */
 @Singleton
 class ModelDownloadManager @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val modelManager: ModelManager
 ) {
 
     companion object {
         private const val TAG = "ModelDownloadManager"
-        private const val DOWNLOAD_BUFFER_SIZE = 8192
-        private const val PARTIAL_SUFFIX = ".partial"
+        private const val BUFFER_SIZE = 8192
+        private const val PART_SUFFIX = ".part"
         private const val CONNECT_TIMEOUT_SECONDS = 30L
         private const val READ_TIMEOUT_SECONDS = 300L
     }
@@ -54,59 +104,67 @@ class ModelDownloadManager @Inject constructor(
             .build()
     }
 
-    val modelsDir: File get() = File(context.filesDir, "models").apply { mkdirs() }
-
     /**
-     * Per-model download states, keyed by catalog entry ID.
-     * The UI observes these flows to show progress bars and status.
+     * Per-model download states, keyed by [ModelCatalogEntry.id].
+     *
+     * The inner [MutableStateFlow] allows fine-grained updates per model
+     * without recomposing the entire state map. The outer [StateFlow] exposes
+     * the full map snapshot for the UI layer.
      */
-    private val _downloadStates = mutableMapOf<String, MutableStateFlow<DownloadState>>()
+    private val _perModelStates = ConcurrentHashMap<String, MutableStateFlow<DownloadState>>()
 
-    /**
-     * Get the download state flow for a specific catalog entry.
-     * Creates a new [Idle] flow if one doesn't exist yet.
-     */
-    fun getDownloadState(catalogId: String): StateFlow<DownloadState> {
-        return _downloadStates.getOrPut(catalogId) {
-            MutableStateFlow(checkExistingDownload(catalogId))
+    private val _downloadState = MutableStateFlow<Map<String, DownloadState>>(emptyMap())
+
+    /** Observable map of download states, keyed by catalog entry ID. */
+    val downloadState: StateFlow<Map<String, DownloadState>> = _downloadState.asStateFlow()
+
+    /** Active download jobs, keyed by entry ID. Used for cancellation. */
+    private val activeJobs = ConcurrentHashMap<String, Job>()
+
+    init {
+        // Initialize state for all catalog entries based on what's on disk
+        ModelCatalog.entries.forEach { entry ->
+            val initialState = checkExistingFile(entry)
+            _perModelStates[entry.id] = MutableStateFlow(initialState)
         }
+        syncMapState()
     }
 
     /**
-     * Download a model from the catalog to local storage.
+     * Download a model from the catalog to [ModelManager.modelsDir].
      *
-     * This is a long-running suspending operation that should be called
-     * from a coroutine scope (e.g. viewModelScope or a WorkManager worker).
-     * Progress updates are emitted to the corresponding [StateFlow].
-     *
-     * Supports resume: if a partial download exists, it will continue
-     * from where it left off using HTTP Range requests.
+     * This is a long-running suspending operation. Progress updates are
+     * emitted to [downloadState]. Supports resume: if a `.part` file
+     * exists, the download continues from where it left off.
      *
      * @param entry The catalog entry describing the model to download
-     * @throws CancellationException if the coroutine is cancelled
      */
     suspend fun downloadModel(entry: ModelCatalogEntry) = withContext(Dispatchers.IO) {
-        val stateFlow = _downloadStates.getOrPut(entry.id) { MutableStateFlow(DownloadState.Idle) }
-        val targetFile = File(modelsDir, entry.downloadUrl.substringAfterLast("/"))
-        val partialFile = File(modelsDir, targetFile.name + PARTIAL_SUFFIX)
+        val stateFlow = getOrCreateStateFlow(entry.id)
+        val targetFile = File(modelManager.modelsDir, entry.filename)
+        val partFile = File(modelManager.modelsDir, entry.filename + PART_SUFFIX)
 
-        // If the model is already fully downloaded, skip
+        // Already downloaded -- nothing to do
         if (targetFile.exists() && targetFile.length() > 0) {
-            stateFlow.value = DownloadState.Completed(targetFile.absolutePath)
+            stateFlow.value = DownloadState.Complete(targetFile)
+            syncMapState()
             return@withContext
         }
 
         try {
             // Determine resume offset from partial file
-            val resumeOffset = if (partialFile.exists()) partialFile.length() else 0L
+            val resumeOffset = if (partFile.exists()) partFile.length() else 0L
 
             stateFlow.value = DownloadState.Downloading(
-                progress = if (entry.fileSizeBytes > 0) resumeOffset.toFloat() / entry.fileSizeBytes else 0f,
+                progress = if (entry.fileSizeBytes > 0) {
+                    resumeOffset.toFloat() / entry.fileSizeBytes
+                } else 0f,
                 bytesDownloaded = resumeOffset,
                 totalBytes = entry.fileSizeBytes
             )
+            syncMapState()
 
-            Log.d(TAG, "Starting download: ${entry.displayName} (resume from $resumeOffset bytes)")
+            Log.d(TAG, "Downloading ${entry.displayName} (resume from $resumeOffset bytes)")
 
             // Build request with optional Range header for resume
             val requestBuilder = Request.Builder().url(entry.downloadUrl)
@@ -117,179 +175,269 @@ class ModelDownloadManager @Inject constructor(
             val response = httpClient.newCall(requestBuilder.build()).execute()
 
             if (!response.isSuccessful && response.code != 206) {
-                stateFlow.value = DownloadState.Failed(
-                    error = "Download failed: HTTP ${response.code}",
-                    retryable = response.code in listOf(408, 429, 500, 502, 503, 504)
+                stateFlow.value = DownloadState.Error(
+                    "HTTP ${response.code}: ${response.message}"
                 )
+                syncMapState()
                 response.close()
                 return@withContext
             }
 
             val body = response.body ?: run {
-                stateFlow.value = DownloadState.Failed("Empty response body", retryable = true)
+                stateFlow.value = DownloadState.Error("Empty response body")
+                syncMapState()
                 response.close()
                 return@withContext
             }
 
+            // If we requested a Range but got 200 (full response), the server
+            // doesn't support resume. Start from scratch to avoid corruption.
+            val effectiveResumeOffset = if (resumeOffset > 0 && response.code == 200) {
+                Log.d(TAG, "Server returned 200 instead of 206; restarting download from scratch")
+                partFile.delete()
+                0L
+            } else {
+                resumeOffset
+            }
+
             // Determine total size from Content-Length or Content-Range
             val contentLength = body.contentLength()
-            val totalBytes = if (resumeOffset > 0 && response.code == 206) {
-                // Parse Content-Range: bytes 1234-5678/9999
+            val totalBytes = if (effectiveResumeOffset > 0 && response.code == 206) {
                 val rangeHeader = response.header("Content-Range")
-                rangeHeader?.substringAfter("/")?.toLongOrNull() ?: (resumeOffset + contentLength)
+                rangeHeader?.substringAfter("/")?.toLongOrNull()
+                    ?: (effectiveResumeOffset + contentLength)
             } else {
                 if (contentLength > 0) contentLength else entry.fileSizeBytes
             }
 
-            // Write to partial file (append if resuming)
-            val outputStream = FileOutputStream(partialFile, resumeOffset > 0)
-            val buffer = ByteArray(DOWNLOAD_BUFFER_SIZE)
-            var bytesDownloaded = resumeOffset
+            // Write to .part file (append if resuming)
+            val outputStream = FileOutputStream(partFile, effectiveResumeOffset > 0)
+            val buffer = ByteArray(BUFFER_SIZE)
+            var bytesDownloaded = effectiveResumeOffset
 
-            body.byteStream().use { inputStream ->
+            body.byteStream().use { input ->
                 outputStream.use { output ->
                     var bytesRead: Int
-                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
                         output.write(buffer, 0, bytesRead)
                         bytesDownloaded += bytesRead
 
                         val progress = if (totalBytes > 0) {
                             bytesDownloaded.toFloat() / totalBytes
-                        } else {
-                            0f
-                        }
+                        } else 0f
 
                         stateFlow.value = DownloadState.Downloading(
                             progress = progress.coerceIn(0f, 1f),
                             bytesDownloaded = bytesDownloaded,
                             totalBytes = totalBytes
                         )
+                        syncMapState()
                     }
                 }
             }
 
             response.close()
 
-            // Verify integrity if checksum is provided
-            if (entry.sha256.isNotBlank()) {
-                Log.d(TAG, "Verifying SHA-256 checksum...")
-                val actualHash = computeSha256(partialFile)
+            // Verify integrity if checksum is not a placeholder
+            stateFlow.value = DownloadState.Verifying
+            syncMapState()
+
+            if (entry.sha256.isNotBlank() &&
+                !entry.sha256.startsWith("placeholder")
+            ) {
+                Log.d(TAG, "Verifying SHA-256 for ${entry.displayName}...")
+                val actualHash = computeSha256(partFile)
                 if (!actualHash.equals(entry.sha256, ignoreCase = true)) {
-                    partialFile.delete()
-                    stateFlow.value = DownloadState.Failed(
-                        error = "Checksum verification failed. Expected: ${entry.sha256}, got: $actualHash",
-                        retryable = true
+                    partFile.delete()
+                    stateFlow.value = DownloadState.Error(
+                        "Checksum mismatch. Expected: ${entry.sha256}, " +
+                            "got: $actualHash"
                     )
+                    syncMapState()
                     return@withContext
                 }
-                Log.d(TAG, "Checksum verified successfully")
+                Log.d(TAG, "Checksum verified for ${entry.displayName}")
             }
 
-            // Rename partial file to final name
-            if (partialFile.renameTo(targetFile)) {
+            // Rename .part file to final name
+            if (partFile.renameTo(targetFile)) {
                 Log.d(TAG, "Download complete: ${targetFile.absolutePath}")
-                stateFlow.value = DownloadState.Completed(targetFile.absolutePath)
+                stateFlow.value = DownloadState.Complete(targetFile)
             } else {
-                stateFlow.value = DownloadState.Failed(
-                    error = "Failed to finalize downloaded file",
-                    retryable = false
+                stateFlow.value = DownloadState.Error(
+                    "Failed to rename download file to final path"
                 )
             }
+            syncMapState()
+
         } catch (e: CancellationException) {
             Log.d(TAG, "Download cancelled: ${entry.displayName}")
-            val downloaded = if (partialFile.exists()) partialFile.length() else 0L
-            stateFlow.value = DownloadState.Paused(downloaded)
+            stateFlow.value = DownloadState.Idle
+            syncMapState()
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "Download failed: ${entry.displayName}", e)
-            stateFlow.value = DownloadState.Failed(
-                error = e.message ?: "Unknown download error",
-                retryable = true
+            stateFlow.value = DownloadState.Error(
+                e.message ?: "Unknown download error"
             )
+            syncMapState()
         }
     }
 
     /**
-     * Delete a downloaded model from local storage.
+     * Cancel an in-progress download.
      *
-     * Also removes any partial download files and resets the download state.
+     * Removes the active job and resets the entry state to [DownloadState.Idle].
+     * The `.part` file is left on disk so the download can be resumed later.
      *
-     * @param entry The catalog entry for the model to delete
-     * @return true if the file was deleted (or didn't exist)
+     * @param entryId The catalog entry ID to cancel
      */
-    fun deleteModel(entry: ModelCatalogEntry): Boolean {
-        val filename = entry.downloadUrl.substringAfterLast("/")
-        val targetFile = File(modelsDir, filename)
-        val partialFile = File(modelsDir, filename + PARTIAL_SUFFIX)
+    fun cancelDownload(entryId: String) {
+        activeJobs[entryId]?.cancel()
+        activeJobs.remove(entryId)
+        _perModelStates[entryId]?.value = DownloadState.Idle
+        syncMapState()
+    }
 
-        partialFile.delete()
+    /**
+     * Register an active download job for cancellation tracking.
+     *
+     * Called by the ViewModel when launching a download coroutine.
+     *
+     * @param entryId The catalog entry ID
+     * @param job The coroutine [Job] running the download
+     */
+    fun registerJob(entryId: String, job: Job) {
+        activeJobs[entryId] = job
+    }
+
+    /**
+     * Get catalog entries that are already downloaded on device.
+     *
+     * Checks [ModelManager.modelsDir] for files matching catalog entry filenames.
+     *
+     * @return List of catalog entries whose GGUF files exist on device
+     */
+    fun getDownloadedModels(): List<ModelCatalogEntry> {
+        return ModelCatalog.entries.filter { entry ->
+            val file = File(modelManager.modelsDir, entry.filename)
+            file.exists() && file.length() > 0
+        }
+    }
+
+    /**
+     * Delete a downloaded model file from local storage.
+     *
+     * Removes both the final file and any partial download, then resets
+     * the download state to [DownloadState.Idle].
+     *
+     * @param entryId The catalog entry ID for the model to delete
+     * @return true if the file was deleted (or never existed)
+     */
+    fun deleteModel(entryId: String): Boolean {
+        val entry = ModelCatalog.findById(entryId) ?: return false
+        val targetFile = File(modelManager.modelsDir, entry.filename)
+        val partFile = File(modelManager.modelsDir, entry.filename + PART_SUFFIX)
+
+        partFile.delete()
         val deleted = !targetFile.exists() || targetFile.delete()
 
         if (deleted) {
-            _downloadStates[entry.id]?.value = DownloadState.Idle
+            _perModelStates[entryId]?.value = DownloadState.Idle
+            syncMapState()
         }
 
         return deleted
     }
 
     /**
-     * Delete a model by its file reference.
+     * Check if a specific catalog entry is already downloaded.
      *
-     * @param modelFile The model file to delete
-     * @return true if the file was deleted
+     * @param entryId The catalog entry ID
+     * @return true if the model file exists and is non-empty
      */
-    fun deleteModelFile(modelFile: File): Boolean {
-        val deleted = modelFile.delete()
-        // Reset any matching download state
-        if (deleted) {
-            val matchingEntry = ModelCatalog.entries.find {
-                it.downloadUrl.substringAfterLast("/") == modelFile.name
+    fun isDownloaded(entryId: String): Boolean {
+        val entry = ModelCatalog.findById(entryId) ?: return false
+        val file = File(modelManager.modelsDir, entry.filename)
+        return file.exists() && file.length() > 0
+    }
+
+    /**
+     * Get the local [File] for a downloaded catalog entry.
+     *
+     * @param entryId The catalog entry ID
+     * @return The file if downloaded, null otherwise
+     */
+    fun getModelFile(entryId: String): File? {
+        val entry = ModelCatalog.findById(entryId) ?: return null
+        val file = File(modelManager.modelsDir, entry.filename)
+        return if (file.exists() && file.length() > 0) file else null
+    }
+
+    // ---- Compatibility methods for ModelManagerViewModel ----
+
+    /** Get the per-model state flow for UI observation. */
+    fun getDownloadState(entryId: String): StateFlow<DownloadState> =
+        getOrCreateStateFlow(entryId).asStateFlow()
+
+    /** Check if a catalog entry is downloaded (by entry object). */
+    fun isModelDownloaded(entry: ModelCatalogEntry): Boolean = isDownloaded(entry.id)
+
+    /** Delete a model by catalog entry object. */
+    fun deleteModel(entry: ModelCatalogEntry) { deleteModel(entry.id) }
+
+    /** Delete a model by its file reference. */
+    fun deleteModelFile(file: File) {
+        file.delete()
+        // Reset state if this matches a catalog entry
+        ModelCatalog.entries.forEach { entry ->
+            if (File(modelManager.modelsDir, entry.filename) == file) {
+                _perModelStates[entry.id]?.value = DownloadState.Idle
+                syncMapState()
             }
-            matchingEntry?.let { _downloadStates[it.id]?.value = DownloadState.Idle }
         }
-        return deleted
+    }
+
+    /** Models directory reference for storage info. */
+    val modelsDir: File get() = modelManager.modelsDir
+
+    // ---- Internal helpers ----
+
+    /**
+     * Get or create a per-model state flow.
+     */
+    private fun getOrCreateStateFlow(entryId: String): MutableStateFlow<DownloadState> {
+        return _perModelStates.getOrPut(entryId) {
+            MutableStateFlow(DownloadState.Idle)
+        }
     }
 
     /**
-     * Check if a model from the catalog is already downloaded.
-     *
-     * @param entry The catalog entry to check
-     * @return true if the model file exists on device
+     * Check the filesystem to determine initial download state for an entry.
      */
-    fun isModelDownloaded(entry: ModelCatalogEntry): Boolean {
-        val filename = entry.downloadUrl.substringAfterLast("/")
-        val targetFile = File(modelsDir, filename)
-        return targetFile.exists() && targetFile.length() > 0
-    }
-
-    /**
-     * Get the local file path for a downloaded catalog model.
-     *
-     * @param entry The catalog entry
-     * @return The file path, or null if not downloaded
-     */
-    fun getModelFilePath(entry: ModelCatalogEntry): String? {
-        val filename = entry.downloadUrl.substringAfterLast("/")
-        val targetFile = File(modelsDir, filename)
-        return if (targetFile.exists()) targetFile.absolutePath else null
-    }
-
-    /**
-     * Check existing download state for a catalog entry.
-     * Called during initialization to detect already-downloaded models.
-     */
-    private fun checkExistingDownload(catalogId: String): DownloadState {
-        val entry = ModelCatalog.findById(catalogId) ?: return DownloadState.Idle
-        val filename = entry.downloadUrl.substringAfterLast("/")
-        val targetFile = File(modelsDir, filename)
-        val partialFile = File(modelsDir, filename + PARTIAL_SUFFIX)
+    private fun checkExistingFile(entry: ModelCatalogEntry): DownloadState {
+        val targetFile = File(modelManager.modelsDir, entry.filename)
+        val partFile = File(modelManager.modelsDir, entry.filename + PART_SUFFIX)
 
         return when {
             targetFile.exists() && targetFile.length() > 0 ->
-                DownloadState.Completed(targetFile.absolutePath)
-            partialFile.exists() && partialFile.length() > 0 ->
-                DownloadState.Paused(partialFile.length())
-            else -> DownloadState.Idle
+                DownloadState.Complete(targetFile)
+            partFile.exists() && partFile.length() > 0 ->
+                DownloadState.Idle // Partial file exists; user can resume
+            else ->
+                DownloadState.Idle
+        }
+    }
+
+    /**
+     * Synchronize the per-model state map into the single [_downloadState] flow.
+     *
+     * Called after every state mutation so that collectors of [downloadState]
+     * receive the latest snapshot.
+     */
+    private fun syncMapState() {
+        _downloadState.update {
+            _perModelStates.mapValues { (_, flow) -> flow.value }
         }
     }
 
@@ -298,7 +446,7 @@ class ModelDownloadManager @Inject constructor(
      */
     private fun computeSha256(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        val buffer = ByteArray(DOWNLOAD_BUFFER_SIZE)
+        val buffer = ByteArray(BUFFER_SIZE)
 
         file.inputStream().use { input ->
             var bytesRead: Int

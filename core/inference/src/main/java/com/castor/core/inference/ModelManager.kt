@@ -1,6 +1,7 @@
 package com.castor.core.inference
 
 import android.content.Context
+import com.castor.core.inference.llama.LlamaCppEngine
 import com.castor.core.inference.prompt.ModelFamily
 import com.castor.core.inference.prompt.PromptFormat
 import com.castor.core.inference.prompt.PromptFormatter
@@ -47,7 +48,7 @@ data class LocalModelInfo(
 @Singleton
 class ModelManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val engine: InferenceEngine
+    private val engine: LlamaCppEngine
 ) {
     private val _modelState = MutableStateFlow<ModelState>(ModelState.NotLoaded)
     val modelState: StateFlow<ModelState> = _modelState
